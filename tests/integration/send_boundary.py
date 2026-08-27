@@ -1,4 +1,4 @@
-"""Exercise send and retry semantics through the public ``tg run`` boundary.
+"""Exercise send and retry semantics through the public ``tg`` boundary.
 
 This probe mutates only the explicit target and removes its uniquely marked
 test messages before it exits.
@@ -13,7 +13,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-# ``tg run`` injects these names into the script namespace.
+# ``tg`` injects these names into the script namespace.
 client = globals()["client"]
 functions = globals()["functions"]
 

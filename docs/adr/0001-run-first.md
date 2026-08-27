@@ -1,4 +1,4 @@
-# ADR-0001: Run-first Telegram capabilities
+# ADR-0001: Python-first Telegram capabilities
 
 - Status: Accepted
 - Date: 2026-08-27
@@ -6,12 +6,13 @@
 ## Decision
 
 Implement a new Telegram capability first as ordinary Python passed to
-`tg run`. Add a wrapper only after repeated use shows that a stable command
+`tg`. Add a wrapper only after repeated use shows that a stable command
 shape removes meaningful repeated agent or human code.
 
 The core remains responsible for configuration, named-account selection,
 session lifecycle, locking, process semantics, and local value-redacted run
-usage reporting. The account name is the session basename under
+usage reporting. Configuration defaults to `~/.config/tg/config.toml` and can
+be overridden with `TG_CONFIG`. The account name is the session basename under
 `~/.local/state/tg/`; `main` is selected when
 `--account` is omitted, and `tg --account NAME ...` selects another session.
 Telethon remains the Telegram API. Workflow policy, bulk orchestration, and
@@ -27,7 +28,7 @@ domain-specific shortcuts stay at the run-script or wrapper layer.
 
 ## Consequence
 
-`tg run` is the capability boundary; wrappers are earned by demonstrated
+`tg` is the capability boundary; wrappers are earned by demonstrated
 repeatability instead of being added speculatively.
 
 The send probe only establishes deduplication for the tested same-process,

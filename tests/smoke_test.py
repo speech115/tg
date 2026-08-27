@@ -13,5 +13,13 @@ result = subprocess.run(
 )
 assert "login" in result.stdout
 assert "doctor" in result.stdout
-assert "run" in result.stdout
 assert "usage" in result.stdout
+assert "skill" in result.stdout
+
+skill = subprocess.run(
+    ["tg", "skill"],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert "name: tg" in skill.stdout

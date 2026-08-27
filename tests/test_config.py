@@ -68,3 +68,14 @@ def test_account_name_accepts_hyphen_and_underscore(tmp_path: Path) -> None:
 def test_missing_credentials_fail(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="TG_API_ID"):
         load_config(tmp_path / "missing.toml")
+
+
+def test_tg_config_overrides_default_path(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "custom.toml"
+    config_path.write_text('[telegram]\napi_id = 456\napi_hash = "custom"\n')
+    monkeypatch.setenv("TG_CONFIG", str(config_path))
+
+    config = load_config()
+
+    assert config.api_id == 456
+    assert config.api_hash == "custom"

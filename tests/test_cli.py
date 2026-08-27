@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,19 +12,39 @@ from tg.config import Config
 from tg.errors import SessionBusyError
 
 
-def test_run_parser_preserves_script_arguments() -> None:
-    args = cli.build_parser().parse_args(["--account", "work", "run", "script.py", "--limit", "2"])
+def test_script_parser_preserves_script_arguments() -> None:
+    args = cli.build_parser().parse_args(["--account", "work", "script.py", "--limit", "2"])
 
     assert args.account == "work"
-    assert args.command == "run"
-    assert args.script == "script.py"
-    assert args.script_args == ["--limit", "2"]
+    assert args.target == "script.py"
+    assert args.target_args == ["--limit", "2"]
 
 
-def test_usage_parser_is_available() -> None:
-    args = cli.build_parser().parse_args(["usage"])
+def test_bare_parser_defaults_to_stdin() -> None:
+    args = cli.build_parser().parse_args([])
 
-    assert args.command == "usage"
+    assert args.target is None
+    assert args.target_args == []
+
+
+@pytest.mark.parametrize("command", ["login", "doctor", "usage", "skill"])
+def test_reserved_commands_are_parsed_as_targets(command: str) -> None:
+    args = cli.build_parser().parse_args([command])
+
+    assert args.target == command
+    assert args.target_args == []
+
+
+def test_main_defaults_to_stdin(monkeypatch) -> None:
+    received: dict[str, object] = {}
+
+    async def run_script(account: str | None, script: str, script_args: list[str]) -> None:
+        received.update(account=account, script=script, script_args=script_args)
+
+    monkeypatch.setattr(cli, "run_script", run_script)
+
+    assert cli.main([]) == 0
+    assert received == {"account": None, "script": "-", "script_args": []}
 
 
 def test_main_formats_session_busy(monkeypatch, capsys) -> None:
@@ -32,32 +53,29 @@ def test_main_formats_session_busy(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(cli, "run_script", fail)
 
-    assert cli.main(["run", "-"]) == 2
+    assert cli.main(["-"]) == 2
     assert capsys.readouterr().err == "tg: session is busy: /tmp/main\n"
 
 
 def test_main_passes_account_and_script_args(monkeypatch) -> None:
     received: dict[str, object] = {}
 
-    async def run_script(
-        config_path: Path, account: str | None, script: str, script_args: list[str]
-    ) -> None:
-        received.update(
-            config_path=config_path,
-            account=account,
-            script=script,
-            script_args=script_args,
-        )
+    async def run_script(account: str | None, script: str, script_args: list[str]) -> None:
+        received.update(account=account, script=script, script_args=script_args)
 
     monkeypatch.setattr(cli, "run_script", run_script)
 
-    assert cli.main(["--account", "work", "run", "script.py", "one", "--flag"]) == 0
+    assert cli.main(["--account", "work", "script.py", "one", "--flag"]) == 0
     assert received == {
-        "config_path": cli.DEFAULT_CONFIG,
         "account": "work",
         "script": "script.py",
         "script_args": ["one", "--flag"],
     }
+
+
+def test_removed_run_command_is_rejected(capsys) -> None:
+    assert cli.main(["run", "-"]) == 2
+    assert "tg run" in capsys.readouterr().err
 
 
 def test_run_script_records_completed_shape_without_script_values(
@@ -89,7 +107,7 @@ def test_run_script_records_completed_shape_without_script_values(
     monkeypatch.setattr(cli, "execute", lambda *_args, **_kwargs: asyncio.sleep(0))
     monkeypatch.setattr(cli.usage_log, "DEFAULT_USAGE_LOG", usage_path)
 
-    asyncio.run(cli.run_script(Path("config.toml"), None, "-", []))
+    asyncio.run(cli.run_script(None, "-", []))
 
     record = json.loads(usage_path.read_text())
     assert record["account"] == "main"
@@ -120,7 +138,7 @@ def test_run_script_records_failed_execution(monkeypatch, tmp_path: Path) -> Non
     monkeypatch.setattr(cli.usage_log, "DEFAULT_USAGE_LOG", usage_path)
 
     with pytest.raises(RuntimeError, match="script failed"):
-        asyncio.run(cli.run_script(Path("config.toml"), None, "-", []))
+        asyncio.run(cli.run_script(None, "-", []))
 
     record = json.loads(usage_path.read_text())
     assert record["ok"] is False
@@ -144,29 +162,41 @@ def test_run_script_records_client_cleanup_failure(monkeypatch, tmp_path: Path) 
     monkeypatch.setattr(cli.usage_log, "DEFAULT_USAGE_LOG", usage_path)
 
     with pytest.raises(RuntimeError, match="disconnect failed"):
-        asyncio.run(cli.run_script(Path("config.toml"), None, "-", []))
+        asyncio.run(cli.run_script(None, "-", []))
 
     record = json.loads(usage_path.read_text())
     assert record["ok"] is False
 
 
-def test_empty_account_is_rejected_in_cli(tmp_path: Path, capsys) -> None:
+def test_empty_account_is_rejected_in_cli(monkeypatch, tmp_path: Path, capsys) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')
+    monkeypatch.setenv("TG_CONFIG", str(config_path))
 
-    assert cli.main(["--config", str(config_path), "--account", "", "doctor"]) == 2
+    assert cli.main(["--account", "", "doctor"]) == 2
     assert capsys.readouterr().err == "tg: account must match [A-Za-z0-9_-]+\n"
 
 
-def test_module_entrypoint_preserves_failure_exit_code(tmp_path: Path) -> None:
+def test_module_entrypoint_uses_tg_config(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "missing.toml"
+    environment = os.environ | {"TG_CONFIG": str(config_path)}
+
     result = subprocess.run(
-        [sys.executable, "-m", "tg", "--config", str(tmp_path / "missing.toml"), "doctor"],
+        [sys.executable, "-m", "tg", "doctor"],
         capture_output=True,
         text=True,
+        env=environment,
     )
 
     assert result.returncode == 2
     assert result.stderr.startswith("tg: set TG_API_ID")
+
+
+def test_skill_command_prints_skill(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "read_skill", lambda: "# bundled skill\n")
+
+    assert cli.main(["skill"]) == 0
+    assert capsys.readouterr().out == "# bundled skill\n"
 
 
 def test_doctor_reports_authenticated_account(monkeypatch, capsys, tmp_path: Path) -> None:
@@ -191,7 +221,7 @@ def test_doctor_reports_authenticated_account(monkeypatch, capsys, tmp_path: Pat
     monkeypatch.setattr(cli, "load_config", lambda *_args, **_kwargs: config)
     monkeypatch.setattr(cli, "client_for", lambda *_args, **_kwargs: ClientContext())
 
-    asyncio.run(cli.doctor(tmp_path / "config.toml", None))
+    asyncio.run(cli.doctor(None))
 
     assert capsys.readouterr().out.splitlines() == [
         "config=ok",

@@ -22,19 +22,20 @@ through `tg`.
 agent wants something in Telegram
         │
         ▼
-      tg run
+      tg
         │
         ├── client.*        friendly Telethon methods
         └── functions.*     raw Telegram API when needed
 ```
 
-**Four commands. The whole Telethon surface.**
+**Four commands plus direct Python execution.**
 
 ```bash
 tg login
 tg doctor
-tg run -
 tg usage
+tg skill
+tg script.py
 ```
 
 The Python distribution is `tg-harness`. The installed command is `tg`.
@@ -56,7 +57,7 @@ uv tool install git+https://github.com/speech115/tg.git
 Then give the agent this instruction:
 
 ```text
-Use tg for Telegram. Run tg doctor first. For Telegram work, use one tg run
+Use tg for Telegram. Run tg doctor first. For Telegram work, use one tg
 program per decision boundary, prefer Telethon client methods, and fall back to
 functions.* / types.* for raw Telegram requests.
 ```
@@ -74,6 +75,8 @@ api_id = 123456
 api_hash = "your-api-hash"
 ```
 
+Set `TG_CONFIG` when the config lives elsewhere.
+
 Authorize the default account:
 
 ```bash
@@ -86,7 +89,7 @@ The default account is `main`. Named accounts map directly to Telethon session f
 ```bash
 tg --account work login
 tg --account work doctor
-tg --account work run script.py
+tg --account work script.py
 ```
 
 ```text
@@ -103,7 +106,7 @@ Account names must match `[A-Za-z0-9_-]+`.
 For a one-off task:
 
 ```bash
-tg run - <<'PY'
+tg <<'PY'
 dialogs = await client.get_dialogs(limit=10)
 for dialog in dialogs:
     print(dialog.name)
@@ -113,8 +116,8 @@ PY
 For reusable logic:
 
 ```bash
-tg run script.py arg1 --flag
-tg --account work run script.py arg1 --flag
+tg script.py arg1 --flag
+tg --account work script.py arg1 --flag
 ```
 
 `tg` keeps a local, value-redacted record of each started run under
@@ -158,7 +161,7 @@ result = await client(functions.users.GetFullUserRequest(id=types.InputUserSelf(
 ## How it works
 
 ```text
-                            one tg run process
+                            one tg process
                                    │
                      authenticated Telethon client
                                    │
@@ -170,7 +173,7 @@ result = await client(functions.users.GetFullUserRequest(id=types.InputUserSelf(
                                    │
                               Telegram API
 
-config      ~/.config/tg/config.toml
+config      ~/.config/tg/config.toml (or TG_CONFIG)
 sessions    ~/.local/state/tg/<account>.session
 locking     one process per named session
 usage       ~/.local/state/tg/usage.jsonl
@@ -183,13 +186,14 @@ domain-specific shortcuts, and idempotency state stay outside the core.
 
 The repository ships `skills/tg/SKILL.md`.
 
-Its main rule is simple: bundle deterministic operations into one `tg run` and
-stop only at a real decision boundary. That avoids reconnecting for every API call
-and keeps agent behavior both faster and simpler.
+Use `tg skill` to print the bundled instructions. Its main rule is simple: bundle
+deterministic operations into one `tg` process and stop only at a real decision
+boundary. That avoids reconnecting for every API call and keeps agent behavior
+both faster and simpler.
 
 ## Trust boundary
 
-`tg run` is intentionally **not a sandbox**.
+`tg` is intentionally **not a sandbox**.
 
 Code passed to it has the permissions of the selected Telegram account and can read,
 send, edit, delete, download, join, leave, and perform raw Telegram API operations.
@@ -207,13 +211,13 @@ session with a lock.
 
 A missing Telegram capability is not a reason to add another core command.
 
-Start with `tg run`. Add a wrapper only if repeated real usage proves that a stable
+Start with `tg`. Add a wrapper only if repeated real usage proves that a stable
 command shape removes meaningful repeated work.
 
 The intended core remains:
 
 ```text
-login · doctor · run · usage
+login · doctor · usage · skill · Python execution
 ```
 
 No workflow registry. No local Telegram database. No governor. No parallel API layer
@@ -224,6 +228,8 @@ on top of Telethon.
 ```bash
 git clone https://github.com/speech115/tg.git
 cd tg
+
+./tg doctor
 
 uv sync --locked --dev
 uv run pytest

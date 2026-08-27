@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export PYTHONPATH="$root/src${PYTHONPATH:+:$PYTHONPATH}"
+
+if [ -x "$root/.venv/bin/python" ]; then
+    exec "$root/.venv/bin/python" -m tg "$@"
+fi
+
+if command -v uv >/dev/null 2>&1; then
+    exec uv run --project "$root" python -m tg "$@"
+fi
+
+echo "tg: install uv or create $root/.venv" >&2
+exit 127

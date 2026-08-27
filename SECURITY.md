@@ -15,6 +15,6 @@ including vulnerability details.
 
 ## Trust boundary
 
-`tg run` deliberately executes trusted Python with the full permissions of the
+`tg` deliberately executes trusted Python with the full permissions of the
 selected Telegram account. It is not a sandbox. Session files and Telegram API
 credentials should be treated as secrets.

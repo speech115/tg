@@ -16,3 +16,7 @@ class SessionBusyError(TgError):
 
 class UsageError(TgError):
     pass
+
+
+class SkillError(TgError):
+    pass

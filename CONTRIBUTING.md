@@ -7,7 +7,7 @@ Telethon owns Telegram operations.
 ## Scope
 
 Before adding a core command or abstraction, first implement the workflow as ordinary
-Python through `tg run`.
+Python through `tg`.
 
 A new wrapper should require evidence that the same stable interaction is repeatedly
 useful and meaningfully cheaper than a run script. Governors, workflow registries,
@@ -38,14 +38,14 @@ normal unit-test suite.
 Read-only boundary probe:
 
 ```bash
-tg run tests/integration/boundary_run.py
+tg tests/integration/boundary_run.py
 ```
 
 The send boundary probe mutates the explicitly selected target and cleans up its test
 messages:
 
 ```bash
-TG_SEND_BOUNDARY_TARGET=me tg run tests/integration/send_boundary.py
+TG_SEND_BOUNDARY_TARGET=me tg tests/integration/send_boundary.py
 ```
 
 Do not point mutating probes at accounts or chats you are unwilling to modify.

@@ -1,4 +1,4 @@
-"""Exercise the public ``tg run`` boundary against a real Telegram session.
+"""Exercise the public ``tg`` boundary against a real Telegram session.
 
 The default mode is read-only. Other modes deliberately exercise the process
 boundary and are selected with ``TG_BOUNDARY_MODE``.
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from telethon import errors
 
-# ``tg run`` injects these names into the script namespace.
+# ``tg`` injects these names into the script namespace.
 client = globals()["client"]
 functions = globals()["functions"]
 types = globals()["types"]

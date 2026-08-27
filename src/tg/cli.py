@@ -3,44 +3,50 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from pathlib import Path
 
 from telethon import types
 from telethon.tl import functions
 
 from . import usage as usage_log
-from .config import DEFAULT_CONFIG, load_config
+from .config import load_config
 from .errors import NotAuthenticatedError, TgError
 from .run import execute, read_source, runtime_namespace
 from .session import client_for
+from .skill import read_skill
+
+_COMMANDS = frozenset({"login", "doctor", "usage", "skill"})
+_REMOVED_COMMANDS = frozenset({"run"})
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="tg")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser = argparse.ArgumentParser(
+        prog="tg",
+        description="Authenticated Telegram Python harness.",
+        epilog=(
+            "Commands: login, doctor, usage, skill.\n"
+            "Without a command, tg executes COMMAND|SCRIPT or reads Python from stdin."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--account", metavar="NAME")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    subparsers.add_parser("login")
-    run_parser = subparsers.add_parser("run")
-    run_parser.add_argument("script", help="Python file or - for stdin")
-    run_parser.add_argument("script_args", nargs=argparse.REMAINDER)
-    subparsers.add_parser("doctor")
-    subparsers.add_parser("usage")
+    parser.add_argument("target", nargs="?", metavar="COMMAND|SCRIPT")
+    parser.add_argument("target_args", nargs=argparse.REMAINDER, metavar="ARGS")
     return parser
 
 
-async def login(config_path: Path, account: str | None) -> None:
-    config = load_config(config_path, account=account)
+async def login(account: str | None) -> None:
+    config = load_config(account=account)
     async with client_for(config, require_auth=False) as client:
         await client.start()
     print(f"logged in: {config.account}", file=sys.stderr)
 
 
 async def run_script(
-    config_path: Path, account: str | None, script: str, script_args: list[str]
+    account: str | None,
+    script: str,
+    script_args: list[str],
 ) -> None:
-    config = load_config(config_path, account=account)
+    config = load_config(account=account)
     filename, source = read_source(script)
     started = False
     ok = False
@@ -64,8 +70,8 @@ async def run_script(
                 pass
 
 
-async def doctor(config_path: Path, account: str | None) -> None:
-    config = load_config(config_path, account=account)
+async def doctor(account: str | None) -> None:
+    config = load_config(account=account)
     session_file = config.session
     if session_file.suffix != ".session":
         session_file = session_file.with_name(f"{session_file.name}.session")
@@ -89,17 +95,30 @@ def usage(account: str | None) -> None:
     print(usage_log.format_report(usage_log.read_records(), account))
 
 
+def skill() -> None:
+    content = read_skill()
+    print(content, end="" if content.endswith("\n") else "\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    target = args.target
     try:
-        if args.command == "login":
-            asyncio.run(login(args.config, args.account))
-        elif args.command == "doctor":
-            asyncio.run(doctor(args.config, args.account))
-        elif args.command == "usage":
-            usage(args.account)
+        if target in _REMOVED_COMMANDS:
+            raise TgError("`tg run` was removed; pass a script directly or pipe Python to `tg`")
+        if target in _COMMANDS:
+            if args.target_args:
+                raise TgError(f"tg {target} does not accept arguments")
+            if target == "login":
+                asyncio.run(login(args.account))
+            elif target == "doctor":
+                asyncio.run(doctor(args.account))
+            elif target == "usage":
+                usage(args.account)
+            else:
+                skill()
         else:
-            asyncio.run(run_script(args.config, args.account, args.script, args.script_args))
+            asyncio.run(run_script(args.account, target or "-", args.target_args))
     except TgError as exc:
         print(f"tg: {exc}", file=sys.stderr)
         return 2

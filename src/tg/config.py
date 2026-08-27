@@ -69,8 +69,17 @@ def _session(account: str | None) -> tuple[str, Path]:
     return name, DEFAULT_SESSION_ROOT / name
 
 
-def load_config(path: Path = DEFAULT_CONFIG, *, account: str | None = None) -> Config:
-    path = path.expanduser()
+def resolve_config_path(path: Path | None = None) -> Path:
+    if path is not None:
+        return path.expanduser()
+    override = os.environ.get("TG_CONFIG")
+    return (
+        Path(override).expanduser() if override else Path("~/.config/tg/config.toml").expanduser()
+    )
+
+
+def load_config(path: Path | None = None, *, account: str | None = None) -> Config:
+    path = resolve_config_path(path)
     data = _read_data(path)
     telegram = _table(data.get("telegram"), "[telegram]")
     if any(key in data for key in ("default_account", "accounts")) or any(
