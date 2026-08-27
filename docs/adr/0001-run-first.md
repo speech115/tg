@@ -1,0 +1,28 @@
+# ADR-0001: Run-first Telegram capabilities
+
+- Status: Accepted
+- Date: 2026-08-27
+
+## Decision
+
+Implement a new Telegram capability first as ordinary Python passed to
+`tg run`. Add a wrapper only after repeated use shows that a stable command
+shape removes meaningful repeated agent or human code.
+
+The core remains responsible for configuration, session lifecycle, locking,
+and process semantics. Telethon remains the Telegram API. Workflow policy,
+bulk orchestration, and domain-specific shortcuts stay at the run-script or
+wrapper layer.
+
+## Guardrails
+
+- Prefer McCabe complexity at or below 8.
+- Ruff `C901` is the hard ceiling at 12.
+- Complexity is a control-flow signal, not an architecture verdict.
+- Do not add a governor, workflow registry, or compatibility layer to the
+  runtime without a separate decision and evidence.
+
+## Consequence
+
+`tg run` is the capability boundary; wrappers are earned by demonstrated
+repeatability instead of being added speculatively.
