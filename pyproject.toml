@@ -1,7 +1,7 @@
 [project]
-name = "tg-runtime"
+name = "tg-harness"
 version = "0.1.0"
-description = "Thin authenticated Telegram runtime for Telethon workflows"
+description = "Tiny authenticated Telegram harness for Telethon workflows"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
