@@ -1,0 +1,20 @@
+# Security
+
+## Supported versions
+
+Only the latest released version is supported with security fixes.
+
+## Reporting a vulnerability
+
+Do not disclose vulnerabilities, Telegram session material, API credentials, or
+other sensitive account data in a public issue.
+
+Use GitHub private vulnerability reporting when it is available. If private reporting
+is not enabled, open a minimal issue asking for a private contact channel without
+including vulnerability details.
+
+## Trust boundary
+
+`tg run` deliberately executes trusted Python with the full permissions of the
+selected Telegram account. It is not a sandbox. Session files and Telegram API
+credentials should be treated as secrets.
