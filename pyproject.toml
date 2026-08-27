@@ -1,12 +1,31 @@
 [project]
-name = "tg"
+name = "tg-runtime"
 version = "0.1.0"
-description = "Thin authenticated Telegram runtime on top of Telethon"
+description = "Thin authenticated Telegram runtime for Telethon workflows"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "speech115" },
+]
+keywords = ["telegram", "telethon", "cli", "automation", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+]
 dependencies = [
     "telethon==1.44.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/speech115/tg"
+Repository = "https://github.com/speech115/tg"
+Issues = "https://github.com/speech115/tg/issues"
 
 [project.scripts]
 tg = "tg.cli:main"
@@ -18,7 +37,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
