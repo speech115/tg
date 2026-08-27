@@ -9,10 +9,12 @@ Implement a new Telegram capability first as ordinary Python passed to
 `tg run`. Add a wrapper only after repeated use shows that a stable command
 shape removes meaningful repeated agent or human code.
 
-The core remains responsible for configuration, session lifecycle, locking,
-and process semantics. Telethon remains the Telegram API. Workflow policy,
-bulk orchestration, and domain-specific shortcuts stay at the run-script or
-wrapper layer.
+The core remains responsible for configuration, named-account selection,
+session lifecycle, locking, and process semantics. `default_account` selects
+the account used without `--account`; `tg --account NAME ...` selects another
+configured session. Telethon remains the Telegram API. Workflow policy, bulk
+orchestration, and domain-specific shortcuts stay at the run-script or wrapper
+layer.
 
 ## Guardrails
 

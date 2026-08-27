@@ -8,7 +8,7 @@ from pathlib import Path
 from telethon import TelegramClient
 
 from .config import Config
-from .errors import NotAuthenticatedError
+from .errors import NotAuthenticatedError, SessionBusyError
 
 
 @contextmanager
@@ -19,7 +19,7 @@ def session_lock(session: Path) -> Iterator[None]:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise RuntimeError(f"session is busy: {session}") from exc
+            raise SessionBusyError(f"session is busy: {session}") from exc
         try:
             yield
         finally:
@@ -34,7 +34,6 @@ async def client_for(config: Config, *, require_auth: bool = True):
             str(config.session),
             config.api_id,
             config.api_hash,
-            flood_sleep_threshold=0,
         )
         try:
             await client.connect()

@@ -8,3 +8,7 @@ class ConfigError(TgError):
 
 class NotAuthenticatedError(TgError):
     pass
+
+
+class SessionBusyError(TgError):
+    pass

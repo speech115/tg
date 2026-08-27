@@ -6,14 +6,23 @@ Thin authenticated Telegram runtime on top of Telethon.
 
 ## Status
 
-The first slice is the runtime spike:
+The current surface is intentionally small:
 
 ```bash
 tg login
+tg doctor
 tg run -
 ```
 
-Inside a run script, the runtime provides `client`, `functions`, `types`, and `account`.
+Choose a named account before a command; the default comes from `default_account`:
+
+```bash
+tg run script.py arg1 --flag
+tg --account work run script.py arg1 --flag
+```
+
+Inside a run script, the runtime provides `client`, `functions`, `types`, and the selected
+`account`. The script also receives normal `__file__`, `sys.argv`, and local-import semantics.
 
 ```python
 dialogs = await client.get_dialogs(limit=10)
@@ -25,10 +34,10 @@ for dialog in dialogs:
 
 ## Boundary probe
 
-Run the checked-in probe through the same public boundary:
+Run the checked-in integration probe through the same public boundary:
 
 ```bash
-tg run scripts/boundary_run.py
+tg run tests/integration/boundary_run.py
 ```
 
 The default probe keeps one connection open while it reads dialogs and messages, searches Saved Messages, performs a raw TL request, downloads one small photo/document when available, runs a large local loop, and checks timeout and FloodWait handling. It never sends anything.
@@ -36,16 +45,16 @@ The default probe keeps one connection open while it reads dialogs and messages,
 Process-boundary cases are explicit:
 
 ```bash
-TG_BOUNDARY_MODE=floodwait tg run scripts/boundary_run.py  # exit 1
-TG_BOUNDARY_MODE=exception tg run scripts/boundary_run.py  # exit 1
-TG_BOUNDARY_MODE=hang tg run scripts/boundary_run.py  # Ctrl-C; exit 130
+TG_BOUNDARY_MODE=floodwait tg run tests/integration/boundary_run.py  # exit 1
+TG_BOUNDARY_MODE=exception tg run tests/integration/boundary_run.py  # exit 1
+TG_BOUNDARY_MODE=hang tg run tests/integration/boundary_run.py  # Ctrl-C; exit 130
 ```
 
 Sending requires both an explicit target and text:
 
 ```bash
 TG_BOUNDARY_MODE=send TG_BOUNDARY_SEND_TO=me TG_BOUNDARY_SEND_TEXT="boundary probe" \
-  tg run scripts/boundary_run.py
+  tg run tests/integration/boundary_run.py
 ```
 
 ## Send boundary experiment
@@ -53,7 +62,7 @@ TG_BOUNDARY_MODE=send TG_BOUNDARY_SEND_TO=me TG_BOUNDARY_SEND_TEXT="boundary pro
 Keep send separate from the read-only probe:
 
 ```bash
-TG_SEND_BOUNDARY_TARGET=me tg run scripts/send_boundary.py
+TG_SEND_BOUNDARY_TARGET=me tg run tests/integration/send_boundary.py
 ```
 
 The experiment sends one text and one file, retries one raw TL message with the same `random_id`, and simulates losing the response after the underlying request has returned. It reads back exact unique markers, verifies one message for each retry, and deletes the test messages. The simulated response loss is an idempotency-boundary check, not a claim about packet loss on a real network.
@@ -63,11 +72,17 @@ The experiment sends one text and one file, retries one raw TL message with the 
 Create `~/.config/tg/config.toml`:
 
 ```toml
+default_account = "main"
+
 [telegram]
 api_id = 123456
 api_hash = "your-api-hash"
+
+[accounts.main]
 session = "~/.local/state/tg/main"
-account = "main"
+
+[accounts.work]
+session = "~/.local/state/tg/work"
 ```
 
 The session and lock live outside the repository. Never commit API credentials or Telethon session files.

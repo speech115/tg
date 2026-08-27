@@ -21,8 +21,8 @@ types = globals()["types"]
 
 async def safe_probe() -> None:
     assert client.is_connected()
-    assert client.flood_sleep_threshold == 0
-    print("connection=ok flood_sleep_threshold=0")
+    assert client.flood_sleep_threshold > 0
+    print(f"connection=ok flood_sleep_threshold={client.flood_sleep_threshold}")
 
     me = await client.get_me()
     assert me is not None and me.id
