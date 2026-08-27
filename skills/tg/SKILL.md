@@ -10,6 +10,9 @@ Use the repository runtime at `/Users/sereja/Projects/tools/tg/.venv/bin/tg`.
 `tg` owns configuration, account selection, session locking, authentication,
 timeouts, and process errors. Telethon owns Telegram operations.
 
+Account names map directly to session basenames under `~/.local/state/tg/`;
+omitting `--account` selects `main`.
+
 ```bash
 tg doctor
 tg run script.py arg1 --flag

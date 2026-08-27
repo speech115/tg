@@ -14,7 +14,7 @@ tg doctor
 tg run -
 ```
 
-Choose a named account before a command; the default comes from `default_account`:
+Choose a named account before a command; the default account is `main`:
 
 ```bash
 tg run script.py arg1 --flag
@@ -23,6 +23,9 @@ tg --account work run script.py arg1 --flag
 
 Inside a run script, the runtime provides `client`, `functions`, `types`, and the selected
 `account`. The script also receives normal `__file__`, `sys.argv`, and local-import semantics.
+
+An account name is the basename of its Telethon session under `~/.local/state/tg/`.
+`main` therefore uses `main.session`, and `--account work` uses `work.session`.
 
 ```python
 dialogs = await client.get_dialogs(limit=10)
@@ -72,17 +75,9 @@ The experiment sends one text and one file, retries one raw TL message with the 
 Create `~/.config/tg/config.toml`:
 
 ```toml
-default_account = "main"
-
 [telegram]
 api_id = 123456
 api_hash = "your-api-hash"
-
-[accounts.main]
-session = "~/.local/state/tg/main"
-
-[accounts.work]
-session = "~/.local/state/tg/work"
 ```
 
 The session and lock live outside the repository. Never commit API credentials or Telethon session files.
