@@ -1,19 +1,46 @@
-# tg
+<div align="center">
 
-Thin authenticated Telegram runtime on top of Telethon.
+# tg-harness
 
-`tg` owns configuration, named sessions, authentication, locking, and process semantics.
-Telethon remains the Telegram API. Instead of growing a second Telegram command API, `tg run`
-executes ordinary Python with an authenticated Telethon client.
+**A tiny authenticated Telegram harness for agents and humans.**
 
-The public Python distribution is `tg-runtime`; the installed command is `tg`.
+One Python process. One real Telegram account. The full Telethon surface.
 
-## Install
+</div>
 
-Requires Python 3.12+ and a POSIX system (macOS or Linux).
+`tg-harness` keeps the runtime deliberately small: configuration, named sessions,
+authentication, locking, and process semantics. Telethon remains the Telegram API.
+
+There is no second Telegram framework to learn and no growing tree of commands.
+When a workflow is missing, write the missing logic as ordinary Python and run it
+through `tg`.
+
+```text
+agent wants something in Telegram
+        │
+        ▼
+      tg run
+        │
+        ├── client.*        friendly Telethon methods
+        └── functions.*     raw Telegram API when needed
+```
+
+**Three commands. The whole Telethon surface.**
 
 ```bash
-uv tool install tg-runtime
+tg login
+tg doctor
+tg run -
+```
+
+The Python distribution is `tg-harness`. The installed command is `tg`.
+
+## Give it to your agent
+
+Install from PyPI:
+
+```bash
+uv tool install tg-harness
 ```
 
 Or install the current GitHub version:
@@ -22,7 +49,17 @@ Or install the current GitHub version:
 uv tool install git+https://github.com/speech115/tg.git
 ```
 
-## Configure
+Then give the agent this instruction:
+
+```text
+Use tg for Telegram. Run tg doctor first. For Telegram work, use one tg run
+program per decision boundary, prefer Telethon client methods, and fall back to
+functions.* / types.* for raw Telegram requests.
+```
+
+Requires Python 3.12+ and a POSIX system (macOS or Linux).
+
+## Configure once
 
 Create Telegram API credentials at https://my.telegram.org/apps, then create
 `~/.config/tg/config.toml`:
@@ -33,30 +70,33 @@ api_id = 123456
 api_hash = "your-api-hash"
 ```
 
-Treat the API hash and session files as credentials. Sessions live under
-`~/.local/state/tg/` and never need to be stored in the repository.
-
-Authorize the default `main` account and verify it:
+Authorize the default account:
 
 ```bash
 tg login
 tg doctor
 ```
 
-Named accounts map directly to session files. Account names must match
-`[A-Za-z0-9_-]+`:
+The default account is `main`. Named accounts map directly to Telethon session files:
 
 ```bash
 tg --account work login
 tg --account work doctor
+tg --account work run script.py
 ```
 
-`main` uses `~/.local/state/tg/main.session`; `--account work` uses
-`~/.local/state/tg/work.session`.
+```text
+~/.local/state/tg/
+├── main.session
+├── work.session
+└── another.session
+```
 
-## Run Telegram code
+Account names must match `[A-Za-z0-9_-]+`.
 
-Use stdin for one-off work:
+## Run ordinary Python
+
+For a one-off task:
 
 ```bash
 tg run - <<'PY'
@@ -66,23 +106,31 @@ for dialog in dialogs:
 PY
 ```
 
-Or run a normal Python file with arguments:
+For reusable logic:
 
 ```bash
 tg run script.py arg1 --flag
 tg --account work run script.py arg1 --flag
 ```
 
-A run script receives `client`, `functions`, `types`, and the selected `account`.
+Every run gets:
+
+```python
+client      # authenticated Telethon client
+functions   # raw Telegram request constructors
+types       # raw Telegram types
+account     # selected named account
+```
+
 It also gets normal `__file__`, `sys.argv`, and local-import behavior.
 
-Prefer Telethon client methods:
+Prefer the friendly API when it fits:
 
 ```python
 messages = await client.get_messages("me", limit=20)
 ```
 
-When needed, use the raw Telegram API directly:
+Drop to the raw API when it does not:
 
 ```python
 result = await client(
@@ -90,38 +138,89 @@ result = await client(
 )
 ```
 
-`tg run` is a trusted full-account execution surface, not a sandbox. Code passed to it can
-read, send, edit, delete, download, and otherwise act with the permissions of the selected
-Telegram account.
-
-## Design
-
-The core surface is intentionally limited to:
+## How it works
 
 ```text
-tg login
-tg doctor
-tg run
+                            one tg run process
+                                   │
+                     authenticated Telethon client
+                                   │
+               ┌───────────────────┴───────────────────┐
+               │                                       │
+          client.* helpers                      raw TL requests
+               │                                functions.* / types.*
+               └───────────────────┬───────────────────┘
+                                   │
+                              Telegram API
+
+config      ~/.config/tg/config.toml
+sessions    ~/.local/state/tg/<account>.session
+locking     one process per named session
 ```
 
-New Telegram workflows belong in ordinary `tg run` Python. A wrapper is added only when a
-repeated workflow has a stable shape and materially benefits from one.
+`tg` owns only the runtime boundary. Workflow policy, bulk orchestration,
+domain-specific shortcuts, and idempotency state stay outside the core.
 
-The repository also includes `skills/tg/SKILL.md` for coding agents.
+## Agent skill
+
+The repository ships `skills/tg/SKILL.md`.
+
+Its main rule is simple: bundle deterministic operations into one `tg run` and
+stop only at a real decision boundary. That avoids reconnecting for every API call
+and keeps agent behavior both faster and simpler.
+
+## Trust boundary
+
+`tg run` is intentionally **not a sandbox**.
+
+Code passed to it has the permissions of the selected Telegram account and can read,
+send, edit, delete, download, join, leave, and perform raw Telegram API operations.
+
+Treat these as secrets:
+
+- `api_hash`
+- Telethon `.session` files
+- any exported authorization material
+
+The runtime keeps sessions outside the repository and serializes access to each named
+session with a lock.
+
+## Why it stays small
+
+A missing Telegram capability is not a reason to add another core command.
+
+Start with `tg run`. Add a wrapper only if repeated real usage proves that a stable
+command shape removes meaningful repeated work.
+
+The intended core remains:
+
+```text
+login
+doctor
+run
+```
+
+No workflow registry. No local Telegram database. No governor. No parallel API layer
+on top of Telethon.
 
 ## Development
 
 ```bash
 git clone https://github.com/speech115/tg.git
 cd tg
-uv sync
+
+uv sync --locked --dev
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
-uv build
+uv build --no-sources
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for project scope, integration probes, and releases.
+CI checks Linux and macOS, then builds and smoke-tests both wheel and source
+distribution.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for scope, integration probes, and release
+instructions.
 
 ## License
 
