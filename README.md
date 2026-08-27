@@ -48,6 +48,16 @@ TG_BOUNDARY_MODE=send TG_BOUNDARY_SEND_TO=me TG_BOUNDARY_SEND_TEXT="boundary pro
   tg run scripts/boundary_run.py
 ```
 
+## Send boundary experiment
+
+Keep send separate from the read-only probe:
+
+```bash
+TG_SEND_BOUNDARY_TARGET=me tg run scripts/send_boundary.py
+```
+
+The experiment sends one text and one file, retries one raw TL message with the same `random_id`, and simulates losing the response after the underlying request has returned. It reads back exact unique markers, verifies one message for each retry, and deletes the test messages. The simulated response loss is an idempotency-boundary check, not a claim about packet loss on a real network.
+
 ## Configuration
 
 Create `~/.config/tg/config.toml`:
