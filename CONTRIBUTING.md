@@ -49,12 +49,12 @@ Do not point mutating probes at accounts or chats you are unwilling to modify.
 
 ## Release
 
-The PyPI distribution name is `tg-runtime`; the installed command remains `tg`.
+The PyPI distribution name is `tg-harness`; the installed command remains `tg`.
 The PyPI name `tg` is already used by another project.
 
 Before the first release, configure a PyPI Trusted Publisher for:
 
-- PyPI project: `tg-runtime`
+- PyPI project: `tg-harness`
 - GitHub owner: `speech115`
 - repository: `tg`
 - workflow: `release.yml`
