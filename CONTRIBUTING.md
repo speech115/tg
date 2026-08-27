@@ -23,9 +23,11 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 uv build --no-sources
+uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
+uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
 ```
 
-CI runs the same checks and smoke-tests the built wheel.
+These are the release gate. They run locally and do not require GitHub Actions.
 
 ## Integration probes
 
@@ -52,25 +54,33 @@ Do not point mutating probes at accounts or chats you are unwilling to modify.
 The PyPI distribution name is `tg-harness`; the installed command remains `tg`.
 The PyPI name `tg` is already used by another project.
 
-Before the first release, configure a PyPI Trusted Publisher for:
-
-- PyPI project: `tg-harness`
-- GitHub owner: `speech115`
-- repository: `tg`
-- workflow: `release.yml`
-- environment: `pypi`
-
 For each release:
 
 1. Update the version in `pyproject.toml` and `src/tg/__init__.py`.
 2. Run `uv lock` and the full local checks.
-3. Merge the green release change to `main`.
-4. Create and push an annotated version tag, for example:
+3. Build and smoke-test both distributions:
+
+   ```bash
+   uv build --no-sources
+   uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
+   uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
+   ```
+
+4. Publish from a machine with PyPI credentials:
+
+   ```bash
+   uv publish
+   ```
+
+5. Create and push an annotated version tag, for example:
 
    ```bash
    git tag -a v0.1.0 -m v0.1.0
    git push origin v0.1.0
    ```
 
-The release workflow builds and smoke-tests the wheel and source distribution,
-publishes them to PyPI with Trusted Publishing, and then creates a GitHub Release.
+6. Create the GitHub Release manually, if desired:
+
+   ```bash
+   gh release create v0.1.0 dist/* --verify-tag --generate-notes
+   ```

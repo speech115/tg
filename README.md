@@ -212,10 +212,12 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 uv build --no-sources
+uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
+uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
 ```
 
-CI checks Linux and macOS, then builds and smoke-tests both wheel and source
-distribution.
+These local commands lint, test, build, and smoke-test both distributions. No
+GitHub Actions runner is required.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for scope, integration probes, and release
 instructions.
