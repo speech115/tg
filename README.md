@@ -2,78 +2,30 @@
 
 Thin authenticated Telegram runtime on top of Telethon.
 
-`tg` owns configuration, session lifecycle, locking, and process errors. Telethon remains the Telegram API. New workflows start as ordinary Python passed to `tg run`; a shortcut is added only when the same interaction becomes frequent and benefits from a stable shape.
+`tg` owns configuration, named sessions, authentication, locking, and process semantics.
+Telethon remains the Telegram API. Instead of growing a second Telegram command API, `tg run`
+executes ordinary Python with an authenticated Telethon client.
 
-## Status
+The public Python distribution is `tg-runtime`; the installed command is `tg`.
 
-The current surface is intentionally small:
+## Install
 
-```bash
-tg login
-tg doctor
-tg run -
-```
-
-Choose a named account before a command; the default account is `main`:
+Requires Python 3.12+ and a POSIX system (macOS or Linux).
 
 ```bash
-tg run script.py arg1 --flag
-tg --account work run script.py arg1 --flag
+uv tool install tg-runtime
 ```
 
-Inside a run script, the runtime provides `client`, `functions`, `types`, and the selected
-`account`. The script also receives normal `__file__`, `sys.argv`, and local-import semantics.
-
-An account name must match `[A-Za-z0-9_-]+` and is the basename of its Telethon session under
-`~/.local/state/tg/`.
-`main` therefore uses `main.session`, and `--account work` uses `work.session`.
-
-```python
-dialogs = await client.get_dialogs(limit=10)
-for dialog in dialogs:
-    print(dialog.name)
-```
-
-`tg run` is a trusted full-account surface. It is not a sandbox.
-
-## Boundary probe
-
-Run the checked-in integration probe through the same public boundary:
+Or install the current GitHub version:
 
 ```bash
-tg run tests/integration/boundary_run.py
+uv tool install git+https://github.com/speech115/tg.git
 ```
 
-The default probe keeps one connection open while it reads dialogs and messages, searches Saved Messages, performs a raw TL request, downloads one small photo/document when available, runs a large local loop, and checks timeout and FloodWait handling. It never sends anything.
+## Configure
 
-Process-boundary cases are explicit:
-
-```bash
-TG_BOUNDARY_MODE=floodwait tg run tests/integration/boundary_run.py  # exit 1
-TG_BOUNDARY_MODE=exception tg run tests/integration/boundary_run.py  # exit 1
-TG_BOUNDARY_MODE=hang tg run tests/integration/boundary_run.py  # Ctrl-C; exit 130
-```
-
-Sending requires both an explicit target and text:
-
-```bash
-TG_BOUNDARY_MODE=send TG_BOUNDARY_SEND_TO=me TG_BOUNDARY_SEND_TEXT="boundary probe" \
-  tg run tests/integration/boundary_run.py
-```
-
-## Send boundary experiment
-
-Keep send separate from the read-only probe:
-
-```bash
-TG_SEND_BOUNDARY_TARGET=me tg run tests/integration/send_boundary.py
-```
-
-The experiment sends one text and one file, retries one raw TL message with the same `random_id`, and simulates losing the response after the underlying request has returned. It reads back exact unique markers, verifies one message for each retry, and deletes the test messages. The simulated response loss is an idempotency-boundary check, not a claim about packet loss on a real network.
-
-## Configuration
-
-Create `~/.config/tg/config.toml`:
+Create Telegram API credentials at https://my.telegram.org/apps, then create
+`~/.config/tg/config.toml`:
 
 ```toml
 [telegram]
@@ -81,13 +33,96 @@ api_id = 123456
 api_hash = "your-api-hash"
 ```
 
-The session and lock live outside the repository. Never commit API credentials or Telethon session files.
+Treat the API hash and session files as credentials. Sessions live under
+`~/.local/state/tg/` and never need to be stored in the repository.
+
+Authorize the default `main` account and verify it:
+
+```bash
+tg login
+tg doctor
+```
+
+Named accounts map directly to session files. Account names must match
+`[A-Za-z0-9_-]+`:
+
+```bash
+tg --account work login
+tg --account work doctor
+```
+
+`main` uses `~/.local/state/tg/main.session`; `--account work` uses
+`~/.local/state/tg/work.session`.
+
+## Run Telegram code
+
+Use stdin for one-off work:
+
+```bash
+tg run - <<'PY'
+dialogs = await client.get_dialogs(limit=10)
+for dialog in dialogs:
+    print(dialog.name)
+PY
+```
+
+Or run a normal Python file with arguments:
+
+```bash
+tg run script.py arg1 --flag
+tg --account work run script.py arg1 --flag
+```
+
+A run script receives `client`, `functions`, `types`, and the selected `account`.
+It also gets normal `__file__`, `sys.argv`, and local-import behavior.
+
+Prefer Telethon client methods:
+
+```python
+messages = await client.get_messages("me", limit=20)
+```
+
+When needed, use the raw Telegram API directly:
+
+```python
+result = await client(
+    functions.users.GetFullUserRequest(id=types.InputUserSelf())
+)
+```
+
+`tg run` is a trusted full-account execution surface, not a sandbox. Code passed to it can
+read, send, edit, delete, download, and otherwise act with the permissions of the selected
+Telegram account.
+
+## Design
+
+The core surface is intentionally limited to:
+
+```text
+tg login
+tg doctor
+tg run
+```
+
+New Telegram workflows belong in ordinary `tg run` Python. A wrapper is added only when a
+repeated workflow has a stable shape and materially benefits from one.
+
+The repository also includes `skills/tg/SKILL.md` for coding agents.
 
 ## Development
 
 ```bash
+git clone https://github.com/speech115/tg.git
+cd tg
 uv sync
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
+uv build
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for project scope, integration probes, and releases.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
