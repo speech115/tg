@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/speech115/tg/main/static/banner-ink.svg" alt="tg-harness" width="100%" />
+
 <div align="center">
 
 # tg-harness
