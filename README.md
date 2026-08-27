@@ -23,6 +23,31 @@ for dialog in dialogs:
 
 `tg run` is a trusted full-account surface. It is not a sandbox.
 
+## Boundary probe
+
+Run the checked-in probe through the same public boundary:
+
+```bash
+tg run scripts/boundary_run.py
+```
+
+The default probe keeps one connection open while it reads dialogs and messages, searches Saved Messages, performs a raw TL request, downloads one small photo/document when available, runs a large local loop, and checks timeout and FloodWait handling. It never sends anything.
+
+Process-boundary cases are explicit:
+
+```bash
+TG_BOUNDARY_MODE=floodwait tg run scripts/boundary_run.py  # exit 1
+TG_BOUNDARY_MODE=exception tg run scripts/boundary_run.py  # exit 1
+TG_BOUNDARY_MODE=hang tg run scripts/boundary_run.py  # Ctrl-C; exit 130
+```
+
+Sending requires both an explicit target and text:
+
+```bash
+TG_BOUNDARY_MODE=send TG_BOUNDARY_SEND_TO=me TG_BOUNDARY_SEND_TEXT="boundary probe" \
+  tg run scripts/boundary_run.py
+```
+
 ## Configuration
 
 Create `~/.config/tg/config.toml`:
