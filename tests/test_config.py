@@ -46,7 +46,7 @@ def test_legacy_inline_account_config_fails(tmp_path: Path) -> None:
         load_config(config_path)
 
 
-@pytest.mark.parametrize("name", ["../foo", "../../something", "/tmp/x", "bad name", "é"])
+@pytest.mark.parametrize("name", ["", "../foo", "../../something", "/tmp/x", "bad name", "é"])
 def test_account_name_must_match_safe_filename(name: str, tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')

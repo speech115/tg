@@ -57,7 +57,7 @@ def _credentials(telegram: dict[str, object], path: Path) -> tuple[int, str]:
 
 
 def _session(account: str | None) -> tuple[str, Path]:
-    name = account or DEFAULT_ACCOUNT
+    name = DEFAULT_ACCOUNT if account is None else account
     if not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9_-]+", name) is None:
         raise ConfigError("account must match [A-Za-z0-9_-]+")
     return name, DEFAULT_SESSION_ROOT / name

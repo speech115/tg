@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+import sys
 from pathlib import Path
 
 from tg import cli
@@ -47,6 +49,25 @@ def test_main_passes_account_and_script_args(monkeypatch) -> None:
         "script": "script.py",
         "script_args": ["one", "--flag"],
     }
+
+
+def test_empty_account_is_rejected_in_cli(tmp_path: Path, capsys) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')
+
+    assert cli.main(["--config", str(config_path), "--account", "", "doctor"]) == 2
+    assert capsys.readouterr().err == "tg: account must match [A-Za-z0-9_-]+\n"
+
+
+def test_module_entrypoint_preserves_failure_exit_code(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "tg", "--config", str(tmp_path / "missing.toml"), "doctor"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr.startswith("tg: set TG_API_ID")
 
 
 def test_doctor_reports_authenticated_account(monkeypatch, capsys, tmp_path: Path) -> None:
