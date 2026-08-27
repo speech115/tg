@@ -10,8 +10,9 @@ Implement a new Telegram capability first as ordinary Python passed to
 shape removes meaningful repeated agent or human code.
 
 The core remains responsible for configuration, named-account selection,
-session lifecycle, locking, and process semantics. The account name is the
-session basename under `~/.local/state/tg/`; `main` is selected when
+session lifecycle, locking, process semantics, and local value-redacted run
+usage reporting. The account name is the session basename under
+`~/.local/state/tg/`; `main` is selected when
 `--account` is omitted, and `tg --account NAME ...` selects another session.
 Telethon remains the Telegram API. Workflow policy, bulk orchestration, and
 domain-specific shortcuts stay at the run-script or wrapper layer.

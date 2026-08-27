@@ -11,6 +11,7 @@ from .errors import ConfigError
 DEFAULT_CONFIG = Path("~/.config/tg/config.toml").expanduser()
 DEFAULT_ACCOUNT = "main"
 DEFAULT_SESSION_ROOT = Path("~/.local/state/tg").expanduser()
+DEFAULT_USAGE_LOG = DEFAULT_SESSION_ROOT / "usage.jsonl"
 
 
 @dataclass(frozen=True)
@@ -56,10 +57,15 @@ def _credentials(telegram: dict[str, object], path: Path) -> tuple[int, str]:
     return api_id, api_hash
 
 
-def _session(account: str | None) -> tuple[str, Path]:
-    name = DEFAULT_ACCOUNT if account is None else account
+def validate_account_name(name: str) -> str:
     if not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9_-]+", name) is None:
         raise ConfigError("account must match [A-Za-z0-9_-]+")
+    return name
+
+
+def _session(account: str | None) -> tuple[str, Path]:
+    name = DEFAULT_ACCOUNT if account is None else account
+    validate_account_name(name)
     return name, DEFAULT_SESSION_ROOT / name
 
 

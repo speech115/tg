@@ -9,7 +9,8 @@ One Python process. One real Telegram account. The full Telethon surface.
 </div>
 
 `tg-harness` keeps the runtime deliberately small: configuration, named sessions,
-authentication, locking, and process semantics. Telethon remains the Telegram API.
+authentication, locking, process semantics, and local run-shape reporting. Telethon
+remains the Telegram API.
 
 There is no second Telegram framework to learn and no growing tree of commands.
 When a workflow is missing, write the missing logic as ordinary Python and run it
@@ -25,12 +26,13 @@ agent wants something in Telegram
         └── functions.*     raw Telegram API when needed
 ```
 
-**Three commands. The whole Telethon surface.**
+**Four commands. The whole Telethon surface.**
 
 ```bash
 tg login
 tg doctor
 tg run -
+tg usage
 ```
 
 The Python distribution is `tg-harness`. The installed command is `tg`.
@@ -113,6 +115,21 @@ tg run script.py arg1 --flag
 tg --account work run script.py arg1 --flag
 ```
 
+`tg` keeps a local, value-redacted record of each started run under
+`~/.local/state/tg/usage.jsonl`. It stores the account, input kind, normalized
+API shape, fingerprint, timestamp, and success status; the fingerprint covers the
+whole normalized script. It does not store script text or Telegram values. Inspect
+repeated shapes with:
+
+```bash
+tg usage
+tg --account work usage
+```
+
+Runs seen at least three times appear in the report; five or more are listed as
+possible wrapper candidates. The command only reports candidates; it never
+creates wrappers.
+
 Every run gets:
 
 ```python
@@ -154,6 +171,7 @@ result = await client(functions.users.GetFullUserRequest(id=types.InputUserSelf(
 config      ~/.config/tg/config.toml
 sessions    ~/.local/state/tg/<account>.session
 locking     one process per named session
+usage       ~/.local/state/tg/usage.jsonl
 ```
 
 `tg` owns only the runtime boundary. Workflow policy, bulk orchestration,
@@ -193,9 +211,7 @@ command shape removes meaningful repeated work.
 The intended core remains:
 
 ```text
-login
-doctor
-run
+login · doctor · run · usage
 ```
 
 No workflow registry. No local Telegram database. No governor. No parallel API layer

@@ -1,7 +1,10 @@
 import asyncio
+import json
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from tg import cli
 from tg.config import Config
@@ -15,6 +18,12 @@ def test_run_parser_preserves_script_arguments() -> None:
     assert args.command == "run"
     assert args.script == "script.py"
     assert args.script_args == ["--limit", "2"]
+
+
+def test_usage_parser_is_available() -> None:
+    args = cli.build_parser().parse_args(["usage"])
+
+    assert args.command == "usage"
 
 
 def test_main_formats_session_busy(monkeypatch, capsys) -> None:
@@ -49,6 +58,96 @@ def test_main_passes_account_and_script_args(monkeypatch) -> None:
         "script": "script.py",
         "script_args": ["one", "--flag"],
     }
+
+
+def test_run_script_records_completed_shape_without_script_values(
+    monkeypatch, tmp_path: Path
+) -> None:
+    config = Config(123, "hash", tmp_path / "main", "main")
+    usage_path = tmp_path / "usage.jsonl"
+
+    class FakeClient:
+        pass
+
+    class ClientContext:
+        async def __aenter__(self):
+            return FakeClient()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "load_config", lambda *_args, **_kwargs: config)
+    monkeypatch.setattr(
+        cli,
+        "read_source",
+        lambda _script: (
+            "<stdin>",
+            'await client.get_messages("private-chat", limit=20)\n',
+        ),
+    )
+    monkeypatch.setattr(cli, "client_for", lambda *_args, **_kwargs: ClientContext())
+    monkeypatch.setattr(cli, "execute", lambda *_args, **_kwargs: asyncio.sleep(0))
+    monkeypatch.setattr(cli.usage_log, "DEFAULT_USAGE_LOG", usage_path)
+
+    asyncio.run(cli.run_script(Path("config.toml"), None, "-", []))
+
+    record = json.loads(usage_path.read_text())
+    assert record["account"] == "main"
+    assert record["source"] == "stdin"
+    assert record["shape"] == "client.get_messages(peer, limit)"
+    assert record["ok"] is True
+    assert "private-chat" not in usage_path.read_text()
+
+
+def test_run_script_records_failed_execution(monkeypatch, tmp_path: Path) -> None:
+    config = Config(123, "hash", tmp_path / "main", "main")
+    usage_path = tmp_path / "usage.jsonl"
+
+    class ClientContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    async def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("script failed")
+
+    monkeypatch.setattr(cli, "load_config", lambda *_args, **_kwargs: config)
+    monkeypatch.setattr(cli, "read_source", lambda _script: ("<stdin>", "print('x')"))
+    monkeypatch.setattr(cli, "client_for", lambda *_args, **_kwargs: ClientContext())
+    monkeypatch.setattr(cli, "execute", fail)
+    monkeypatch.setattr(cli.usage_log, "DEFAULT_USAGE_LOG", usage_path)
+
+    with pytest.raises(RuntimeError, match="script failed"):
+        asyncio.run(cli.run_script(Path("config.toml"), None, "-", []))
+
+    record = json.loads(usage_path.read_text())
+    assert record["ok"] is False
+
+
+def test_run_script_records_client_cleanup_failure(monkeypatch, tmp_path: Path) -> None:
+    config = Config(123, "hash", tmp_path / "main", "main")
+    usage_path = tmp_path / "usage.jsonl"
+
+    class ClientContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            raise RuntimeError("disconnect failed")
+
+    monkeypatch.setattr(cli, "load_config", lambda *_args, **_kwargs: config)
+    monkeypatch.setattr(cli, "read_source", lambda _script: ("<stdin>", "print('x')"))
+    monkeypatch.setattr(cli, "client_for", lambda *_args, **_kwargs: ClientContext())
+    monkeypatch.setattr(cli, "execute", lambda *_args, **_kwargs: asyncio.sleep(0))
+    monkeypatch.setattr(cli.usage_log, "DEFAULT_USAGE_LOG", usage_path)
+
+    with pytest.raises(RuntimeError, match="disconnect failed"):
+        asyncio.run(cli.run_script(Path("config.toml"), None, "-", []))
+
+    record = json.loads(usage_path.read_text())
+    assert record["ok"] is False
 
 
 def test_empty_account_is_rejected_in_cli(tmp_path: Path, capsys) -> None:

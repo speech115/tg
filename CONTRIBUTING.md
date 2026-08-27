@@ -1,7 +1,8 @@
 # Contributing
 
 `tg` is intentionally small. The core owns configuration, named-session selection,
-authentication, locking, and Python process semantics. Telethon owns Telegram operations.
+authentication, locking, Python process semantics, and local run-shape reporting.
+Telethon owns Telegram operations.
 
 ## Scope
 

@@ -17,6 +17,7 @@ Account names match `[A-Za-z0-9_-]+` and map directly to session basenames under
 tg doctor
 tg run script.py arg1 --flag
 tg --account work run script.py
+tg usage
 ```
 
 `tg run` exposes `client`, `functions`, `types`, and the selected `account`.
@@ -32,3 +33,9 @@ repeatedly useful.
 
 For sends that need retry control, choose and own a `random_id` in the run script;
 `tg` does not persist workflow state or idempotency state.
+
+`tg run` records only a value-redacted shape of each started script in
+`~/.local/state/tg/usage.jsonl`. Use `tg usage` to see repeated shapes, or
+`tg --account NAME usage` for one account. Five or more runs are reported as
+wrapper candidates; no wrapper is generated automatically. Shapes seen fewer
+than three times stay out of the report.

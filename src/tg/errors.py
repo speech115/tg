@@ -12,3 +12,7 @@ class NotAuthenticatedError(TgError):
 
 class SessionBusyError(TgError):
     pass
+
+
+class UsageError(TgError):
+    pass

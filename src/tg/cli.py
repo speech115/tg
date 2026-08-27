@@ -8,6 +8,7 @@ from pathlib import Path
 from telethon import types
 from telethon.tl import functions
 
+from . import usage as usage_log
 from .config import DEFAULT_CONFIG, load_config
 from .errors import NotAuthenticatedError, TgError
 from .run import execute, read_source, runtime_namespace
@@ -25,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("script", help="Python file or - for stdin")
     run_parser.add_argument("script_args", nargs=argparse.REMAINDER)
     subparsers.add_parser("doctor")
+    subparsers.add_parser("usage")
     return parser
 
 
@@ -40,13 +42,26 @@ async def run_script(
 ) -> None:
     config = load_config(config_path, account=account)
     filename, source = read_source(script)
-    async with client_for(config) as client:
-        await execute(
-            source,
-            filename,
-            runtime_namespace(client, config.account, functions, types),
-            argv=[filename if script != "-" else "-", *script_args],
-        )
+    started = False
+    ok = False
+    try:
+        async with client_for(config) as client:
+            started = True
+            await execute(
+                source,
+                filename,
+                runtime_namespace(client, config.account, functions, types),
+                argv=[filename if script != "-" else "-", *script_args],
+            )
+        ok = True
+    finally:
+        if started:
+            try:
+                usage_log.append_record(
+                    usage_log.make_record(source, config.account, script, ok=ok)
+                )
+            except OSError:
+                pass
 
 
 async def doctor(config_path: Path, account: str | None) -> None:
@@ -70,6 +85,10 @@ async def doctor(config_path: Path, account: str | None) -> None:
     print(f"user=ok id={me.id} username={username}")
 
 
+def usage(account: str | None) -> None:
+    print(usage_log.format_report(usage_log.read_records(), account))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -77,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
             asyncio.run(login(args.config, args.account))
         elif args.command == "doctor":
             asyncio.run(doctor(args.config, args.account))
+        elif args.command == "usage":
+            usage(args.account)
         else:
             asyncio.run(run_script(args.config, args.account, args.script, args.script_args))
     except TgError as exc:
