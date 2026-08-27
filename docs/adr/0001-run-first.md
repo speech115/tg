@@ -26,3 +26,8 @@ wrapper layer.
 
 `tg run` is the capability boundary; wrappers are earned by demonstrated
 repeatability instead of being added speculatively.
+
+The send probe only establishes deduplication for the tested same-process,
+same-peer, same-payload retry. It does not establish a contract for a new
+process or reconnect, the retention window, another peer, or a changed
+payload with the same `random_id`.
