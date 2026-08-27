@@ -116,10 +116,10 @@ tg --account work run script.py arg1 --flag
 Every run gets:
 
 ```python
-client      # authenticated Telethon client
-functions   # raw Telegram request constructors
-types       # raw Telegram types
-account     # selected named account
+client  # authenticated Telethon client
+functions  # raw Telegram request constructors
+types  # raw Telegram types
+account  # selected named account
 ```
 
 It also gets normal `__file__`, `sys.argv`, and local-import behavior.
@@ -133,9 +133,7 @@ messages = await client.get_messages("me", limit=20)
 Drop to the raw API when it does not:
 
 ```python
-result = await client(
-    functions.users.GetFullUserRequest(id=types.InputUserSelf())
-)
+result = await client(functions.users.GetFullUserRequest(id=types.InputUserSelf()))
 ```
 
 ## How it works
