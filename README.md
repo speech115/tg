@@ -24,7 +24,8 @@ tg --account work run script.py arg1 --flag
 Inside a run script, the runtime provides `client`, `functions`, `types`, and the selected
 `account`. The script also receives normal `__file__`, `sys.argv`, and local-import semantics.
 
-An account name is the basename of its Telethon session under `~/.local/state/tg/`.
+An account name must match `[A-Za-z0-9_-]+` and is the basename of its Telethon session under
+`~/.local/state/tg/`.
 `main` therefore uses `main.session`, and `--account work` uses `work.session`.
 
 ```python

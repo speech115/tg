@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,8 +58,8 @@ def _credentials(telegram: dict[str, object], path: Path) -> tuple[int, str]:
 
 def _session(account: str | None) -> tuple[str, Path]:
     name = account or DEFAULT_ACCOUNT
-    if not name or name in {".", ".."} or Path(name).name != name:
-        raise ConfigError("account must be a simple name")
+    if not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9_-]+", name) is None:
+        raise ConfigError("account must match [A-Za-z0-9_-]+")
     return name, DEFAULT_SESSION_ROOT / name
 
 

@@ -46,12 +46,23 @@ def test_legacy_inline_account_config_fails(tmp_path: Path) -> None:
         load_config(config_path)
 
 
-def test_account_name_must_be_one_path_segment(tmp_path: Path) -> None:
+@pytest.mark.parametrize("name", ["../foo", "../../something", "/tmp/x", "bad name", "é"])
+def test_account_name_must_match_safe_filename(name: str, tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')
 
-    with pytest.raises(ConfigError, match="account must be a simple name"):
-        load_config(config_path, account="../work")
+    with pytest.raises(ConfigError, match="account must match"):
+        load_config(config_path, account=name)
+
+
+def test_account_name_accepts_hyphen_and_underscore(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')
+
+    config = load_config(config_path, account="second-2_test")
+
+    assert config.account == "second-2_test"
+    assert config.session == DEFAULT_SESSION_ROOT / "second-2_test"
 
 
 def test_missing_credentials_fail(tmp_path: Path) -> None:
