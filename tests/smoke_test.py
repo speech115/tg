@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from importlib.metadata import version
 
-assert version("tg-runtime")
+assert version("tg-harness")
 
 result = subprocess.run(
     ["tg", "--help"],
