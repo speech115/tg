@@ -75,6 +75,8 @@ api_id = 123456
 api_hash = "your-api-hash"
 ```
 
+Alternatively, set `TG_API_ID` and `TG_API_HASH` in the environment.
+
 Set `TG_CONFIG` when the config lives elsewhere.
 
 Authorize the default account:

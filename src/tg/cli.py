@@ -47,8 +47,10 @@ async def run_script(
     script: str,
     script_args: list[str],
 ) -> None:
-    config = load_config(account=account)
     filename, source = read_source(script)
+    if not source.strip():
+        raise TgError("script is empty")
+    config = load_config(account=account)
     async with client_for(config) as client:
         await execute(
             source,
@@ -98,8 +100,12 @@ def skill() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     target = args.target
+    if target is None and sys.stdin.isatty():
+        parser.print_help()
+        return 2
     try:
         if target in _COMMANDS:
             if args.target_args:

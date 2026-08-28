@@ -1,7 +1,7 @@
 """Exercise the public ``tg`` boundary against a real Telegram session.
 
-The default mode is read-only. Other modes deliberately exercise the process
-runtime and are selected with ``TG_PROBE_MODE``.
+The default mode is read-only. Other modes exercise the process runtime and are
+selected with ``TG_PROBE_MODE``.
 """
 
 from __future__ import annotations
@@ -92,22 +92,10 @@ async def safe_probe() -> None:
         print("floodwait=handled synthetic_seconds=1")
 
 
-async def send_probe() -> None:
-    target = os.environ.get("TG_PROBE_SEND_TO")
-    text = os.environ.get("TG_PROBE_SEND_TEXT")
-    if not target or not text:
-        raise ValueError("send mode requires TG_PROBE_SEND_TO and TG_PROBE_SEND_TEXT")
-    sent = await client.send_message(target, text)
-    assert sent is not None and sent.id
-    print("send=ok")
-
-
 async def main() -> None:
     mode = os.environ.get("TG_PROBE_MODE", "safe")
     if mode == "safe":
         await safe_probe()
-    elif mode == "send":
-        await send_probe()
     elif mode == "floodwait":
         raise errors.FloodWaitError(request=None, capture=1)
     elif mode == "exception":

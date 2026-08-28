@@ -1,4 +1,5 @@
 import asyncio
+import io
 import os
 import subprocess
 import sys
@@ -45,6 +46,32 @@ def test_main_defaults_to_stdin(monkeypatch) -> None:
     assert received == {"account": None, "script": "-", "script_args": []}
 
 
+def test_main_prints_help_for_bare_tty(monkeypatch, capsys) -> None:
+    class TTY:
+        def isatty(self) -> bool:
+            return True
+
+        def read(self) -> str:
+            raise AssertionError("bare TTY must not read stdin")
+
+    monkeypatch.setattr(cli.sys, "stdin", TTY())
+
+    assert cli.main([]) == 2
+    assert capsys.readouterr().out.startswith("usage: tg")
+
+
+def test_empty_stdin_is_rejected_before_config(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO(" \n"))
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda *_args, **_kwargs: pytest.fail("empty stdin must not load config"),
+    )
+
+    assert cli.main([]) == 2
+    assert capsys.readouterr().err == "tg: script is empty\n"
+
+
 def test_main_formats_session_busy(monkeypatch, capsys) -> None:
     async def fail(*_args: object, **_kwargs: object) -> None:
         raise TgError("session is busy: /tmp/main")
@@ -72,9 +99,12 @@ def test_main_passes_account_and_script_args(monkeypatch) -> None:
 
 
 def test_missing_script_is_reported_as_tg_error(monkeypatch, capsys, tmp_path: Path) -> None:
-    config = Config(123, "hash", tmp_path / "main", "main")
     missing = tmp_path / "missing.py"
-    monkeypatch.setattr(cli, "load_config", lambda *_args, **_kwargs: config)
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda *_args, **_kwargs: pytest.fail("missing script must not load config"),
+    )
 
     assert cli.main([str(missing)]) == 2
     assert (
