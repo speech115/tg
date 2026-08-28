@@ -1,18 +1,16 @@
 # Contributing
 
 `tg` is intentionally small. The core owns configuration, named-session selection,
-authentication, locking, Python process semantics, and local run-shape reporting.
-Telethon owns Telegram operations.
+authentication, locking, and Python process semantics. Telethon owns Telegram
+operations.
 
 ## Scope
 
 Before adding a core command or abstraction, first implement the workflow as ordinary
 Python through `tg`.
 
-A new wrapper should require evidence that the same stable interaction is repeatedly
-useful and meaningfully cheaper than a run script. Governors, workflow registries,
-compatibility layers, persistent orchestration state, and Telegram-domain command trees
-are out of scope without a separate architectural decision.
+Save a script when a workflow becomes repetitive. Governors, workflow registries,
+persistent orchestration state, and Telegram-domain command trees are out of scope.
 
 ## Development
 

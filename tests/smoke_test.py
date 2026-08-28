@@ -13,7 +13,6 @@ result = subprocess.run(
 )
 assert "login" in result.stdout
 assert "doctor" in result.stdout
-assert "usage" in result.stdout
 assert "skill" in result.stdout
 
 skill = subprocess.run(

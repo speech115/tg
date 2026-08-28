@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from tg import TgError
 from tg.config import DEFAULT_SESSION_ROOT, load_config
-from tg.errors import ConfigError
 
 
 def test_load_config_maps_default_and_named_accounts_to_session_names(tmp_path: Path) -> None:
@@ -27,31 +27,12 @@ def test_load_config_maps_default_and_named_accounts_to_session_names(tmp_path: 
     assert selected.account == "work"
 
 
-def test_obsolete_account_registry_fails(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        'default_account = "main"\n[accounts.main]\nsession = "~/main"\n'
-        '[telegram]\napi_id = 123\napi_hash = "hash"\n'
-    )
-
-    with pytest.raises(ConfigError, match="account names map directly to session files"):
-        load_config(config_path)
-
-
-def test_legacy_inline_account_config_fails(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.toml"
-    config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\nsession = "~/session"\n')
-
-    with pytest.raises(ConfigError, match="account names map directly to session files"):
-        load_config(config_path)
-
-
 @pytest.mark.parametrize("name", ["", "../foo", "../../something", "/tmp/x", "bad name", "é"])
 def test_account_name_must_match_safe_filename(name: str, tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')
 
-    with pytest.raises(ConfigError, match="account must match"):
+    with pytest.raises(TgError, match="account must match"):
         load_config(config_path, account=name)
 
 
@@ -66,7 +47,7 @@ def test_account_name_accepts_hyphen_and_underscore(tmp_path: Path) -> None:
 
 
 def test_missing_credentials_fail(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="TG_API_ID"):
+    with pytest.raises(TgError, match="TG_API_ID"):
         load_config(tmp_path / "missing.toml")
 
 

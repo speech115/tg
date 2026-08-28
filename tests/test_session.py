@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from tg import TgError
 from tg.config import Config
-from tg.errors import SessionBusyError
 from tg.session import client_for, session_lock
 
 
@@ -16,7 +16,7 @@ def test_session_lock_raises_typed_error(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(tg.session.fcntl, "flock", fail_lock)
 
-    with pytest.raises(SessionBusyError, match="session is busy"):
+    with pytest.raises(TgError, match="session is busy"):
         with session_lock(tmp_path / "main"):
             pass
 

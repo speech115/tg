@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
+import inspect
 import sys
+from importlib.resources import files
+from pathlib import Path
+from typing import Any
 
 from telethon import types
 from telethon.tl import functions
 
-from . import usage as usage_log
+from . import TgError
 from .config import load_config
-from .errors import NotAuthenticatedError, TgError
-from .run import execute, read_source, runtime_namespace
 from .session import client_for
-from .skill import read_skill
 
-_COMMANDS = frozenset({"login", "doctor", "usage", "skill"})
-_REMOVED_COMMANDS = frozenset({"run"})
+_COMMANDS = frozenset({"login", "doctor", "skill"})
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="tg",
         description="Authenticated Telegram Python harness.",
         epilog=(
-            "Commands: login, doctor, usage, skill.\n"
+            "Commands: login, doctor, skill.\n"
             "Without a command, tg executes COMMAND|SCRIPT or reads Python from stdin."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -48,26 +49,19 @@ async def run_script(
 ) -> None:
     config = load_config(account=account)
     filename, source = read_source(script)
-    started = False
-    ok = False
-    try:
-        async with client_for(config) as client:
-            started = True
-            await execute(
-                source,
-                filename,
-                runtime_namespace(client, config.account, functions, types),
-                argv=[filename if script != "-" else "-", *script_args],
-            )
-        ok = True
-    finally:
-        if started:
-            try:
-                usage_log.append_record(
-                    usage_log.make_record(source, config.account, script, ok=ok)
-                )
-            except OSError:
-                pass
+    async with client_for(config) as client:
+        await execute(
+            source,
+            filename,
+            {
+                "__name__": "__main__",
+                "client": client,
+                "functions": functions,
+                "types": types,
+                "account": config.account,
+            },
+            argv=[filename if script != "-" else "-", *script_args],
+        )
 
 
 async def doctor(account: str | None) -> None:
@@ -80,10 +74,10 @@ async def doctor(account: str | None) -> None:
     print(f"account=ok name={config.account}")
     print(f"session={session_status} path={session_file}")
     if session_status == "missing":
-        raise NotAuthenticatedError(f"session is missing: {session_file}; run `tg login`")
+        raise TgError(f"session is missing: {session_file}; run `tg login`")
     async with client_for(config, require_auth=False) as client:
         if not await client.is_user_authorized():
-            raise NotAuthenticatedError("account is not authorized; run `tg login`")
+            raise TgError("account is not authorized; run `tg login`")
         me = await client.get_me()
     username = f"@{me.username}" if me.username else "-"
     print("telegram=connected")
@@ -91,12 +85,15 @@ async def doctor(account: str | None) -> None:
     print(f"user=ok id={me.id} username={username}")
 
 
-def usage(account: str | None) -> None:
-    print(usage_log.format_report(usage_log.read_records(), account))
-
-
 def skill() -> None:
-    content = read_skill()
+    try:
+        content = files("tg").joinpath("SKILL.md").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        source_path = Path(__file__).resolve().parents[2] / "skills" / "tg" / "SKILL.md"
+        try:
+            content = source_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise TgError(f"cannot read bundled skill: {exc}") from exc
     print(content, end="" if content.endswith("\n") else "\n")
 
 
@@ -104,8 +101,6 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     target = args.target
     try:
-        if target in _REMOVED_COMMANDS:
-            raise TgError("`tg run` was removed; pass a script directly or pipe Python to `tg`")
         if target in _COMMANDS:
             if args.target_args:
                 raise TgError(f"tg {target} does not accept arguments")
@@ -113,8 +108,6 @@ def main(argv: list[str] | None = None) -> int:
                 asyncio.run(login(args.account))
             elif target == "doctor":
                 asyncio.run(doctor(args.account))
-            elif target == "usage":
-                usage(args.account)
             else:
                 skill()
         else:
@@ -126,3 +119,33 @@ def main(argv: list[str] | None = None) -> int:
         print("tg: interrupted", file=sys.stderr)
         return 130
     return 0
+
+
+def read_source(script: str) -> tuple[str, str]:
+    if script == "-":
+        return "<stdin>", sys.stdin.read()
+    path = Path(script).expanduser().resolve()
+    return str(path), path.read_text()
+
+
+async def execute(
+    source: str,
+    filename: str,
+    namespace: dict[str, Any],
+    *,
+    argv: list[str] | None = None,
+) -> None:
+    previous_argv = sys.argv
+    previous_path = sys.path[:]
+    namespace["__file__"] = filename
+    sys.argv = [filename] if argv is None else list(argv)
+    if not filename.startswith("<"):
+        sys.path.insert(0, str(Path(filename).expanduser().resolve().parent))
+    try:
+        code = compile(source, filename, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+        result = eval(code, namespace)
+        if inspect.isawaitable(result):
+            await result
+    finally:
+        sys.argv = previous_argv
+        sys.path[:] = previous_path

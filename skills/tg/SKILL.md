@@ -18,7 +18,6 @@ under `~/.local/state/tg/`; omitting `--account` selects `main`.
 tg doctor
 tg script.py arg1 --flag
 tg --account work script.py
-tg usage
 tg skill
 ```
 
@@ -40,14 +39,9 @@ requests when no friendly method fits.
 
 Bundle deterministic Telegram operations into one `tg` process and stop at a
 genuine decision boundary, rather than starting one process per API call. Keep
-one-off workflow logic in the script. Add a wrapper only after the same script
-shape is repeatedly useful.
+workflow logic in the script, saving it when it becomes repetitive.
 
 For sends that need retry control, choose and own a `random_id` in the script;
 `tg` does not persist workflow state or idempotency state.
 
-Each Python run records only a value-redacted shape in
-`~/.local/state/tg/usage.jsonl`. Use `tg usage` to see repeated shapes, or
-`tg --account NAME usage` for one account. Five or more runs are reported as
-wrapper candidates; no wrapper is generated automatically. Shapes seen fewer
-than three times stay out of the report.
+If a workflow becomes repetitive, save the Python program as a reusable script.

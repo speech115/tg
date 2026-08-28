@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from tg.run import execute
+from tg.cli import execute
 
 
 def test_execute_supports_top_level_await() -> None:

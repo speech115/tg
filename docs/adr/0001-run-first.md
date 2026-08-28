@@ -6,12 +6,11 @@
 ## Decision
 
 Implement a new Telegram capability first as ordinary Python passed to
-`tg`. Add a wrapper only after repeated use shows that a stable command
-shape removes meaningful repeated agent or human code.
+`tg`. Save that program as a script when the workflow becomes repetitive.
 
 The core remains responsible for configuration, named-account selection,
-session lifecycle, locking, process semantics, and local value-redacted run
-usage reporting. Configuration defaults to `~/.config/tg/config.toml` and can
+session lifecycle, locking, and process semantics. Configuration defaults to
+`~/.config/tg/config.toml` and can
 be overridden with `TG_CONFIG`. The account name is the session basename under
 `~/.local/state/tg/`; `main` is selected when
 `--account` is omitted, and `tg --account NAME ...` selects another session.
@@ -28,8 +27,7 @@ domain-specific shortcuts stay at the run-script or wrapper layer.
 
 ## Consequence
 
-`tg` is the capability boundary; wrappers are earned by demonstrated
-repeatability instead of being added speculatively.
+`tg` is the capability boundary; workflow scripts stay outside the runtime.
 
 The send probe only establishes deduplication for the tested same-process,
 same-peer, same-payload retry. It does not establish a contract for a new
