@@ -6,7 +6,7 @@
 
 **A tiny authenticated Telegram harness for agents and humans.**
 
-One Python process. One real Telegram account. The full Telethon surface.
+One Python process. One authenticated Telegram account per run. The full Telethon surface.
 
 </div>
 
@@ -56,9 +56,10 @@ uv tool install git+https://github.com/speech115/tg.git
 Then give the agent this instruction:
 
 ```text
-Use tg for Telegram. Run tg doctor first. For Telegram work, use one tg
-program per decision boundary, prefer Telethon client methods, and fall back to
-functions.* / types.* for raw Telegram requests.
+Use tg for Telegram. Run tg doctor first. If the account is not authorized, ask
+me to complete tg login. For Telegram work, use one tg program per decision
+boundary, prefer Telethon client methods, and fall back to functions.* / types.*
+for raw Telegram requests.
 ```
 
 Requires Python 3.12+ and a POSIX system (macOS or Linux).
