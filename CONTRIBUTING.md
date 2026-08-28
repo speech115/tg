@@ -9,8 +9,8 @@ operations.
 Before adding a core command or abstraction, first implement the workflow as ordinary
 Python through `tg`.
 
-Save a script when a workflow becomes repetitive. Governors, workflow registries,
-persistent orchestration state, and Telegram-domain command trees are out of scope.
+Save a script when a workflow becomes repetitive. Extend the core only when ordinary
+Python and Telethon cannot express the need cleanly.
 
 ## Development
 
@@ -74,12 +74,12 @@ For each release:
 5. Create and push an annotated version tag, for example:
 
    ```bash
-   git tag -a v0.1.0 -m v0.1.0
-   git push origin v0.1.0
+   git tag -a v0.1.1 -m v0.1.1
+   git push origin v0.1.1
    ```
 
 6. Create the GitHub Release manually, if desired:
 
    ```bash
-   gh release create v0.1.0 dist/* --verify-tag --generate-notes
+   gh release create v0.1.1 dist/* --verify-tag --generate-notes
    ```

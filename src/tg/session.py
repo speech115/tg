@@ -11,6 +11,23 @@ from . import TgError
 from .config import Config
 
 
+def _secure_session(config: Config) -> Path:
+    root = config.session.parent
+    session = (
+        config.session
+        if config.session.suffix == ".session"
+        else config.session.with_name(f"{config.session.name}.session")
+    )
+    try:
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        root.chmod(0o700)
+        if session.exists():
+            session.chmod(0o600)
+    except OSError as exc:
+        raise TgError(f"cannot secure Telegram session {root}: {exc}") from exc
+    return session
+
+
 @contextmanager
 def session_lock(session: Path) -> Iterator[None]:
     lock_path = session.with_name(f"{session.name}.lock")
@@ -28,7 +45,7 @@ def session_lock(session: Path) -> Iterator[None]:
 
 @asynccontextmanager
 async def client_for(config: Config, *, require_auth: bool = True):
-    config.session.parent.mkdir(parents=True, exist_ok=True)
+    _secure_session(config)
     with session_lock(config.session):
         client = TelegramClient(
             str(config.session),
@@ -37,6 +54,7 @@ async def client_for(config: Config, *, require_auth: bool = True):
         )
         try:
             await client.connect()
+            _secure_session(config)
             if require_auth and not await client.is_user_authorized():
                 raise TgError("Telegram session is not authorized; run `tg login`")
             yield client

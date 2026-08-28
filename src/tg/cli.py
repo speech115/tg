@@ -125,7 +125,10 @@ def read_source(script: str) -> tuple[str, str]:
     if script == "-":
         return "<stdin>", sys.stdin.read()
     path = Path(script).expanduser().resolve()
-    return str(path), path.read_text()
+    try:
+        return str(path), path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise TgError(f"cannot read script {path}: {exc}") from exc
 
 
 async def execute(

@@ -71,6 +71,18 @@ def test_main_passes_account_and_script_args(monkeypatch) -> None:
     }
 
 
+def test_missing_script_is_reported_as_tg_error(monkeypatch, capsys, tmp_path: Path) -> None:
+    config = Config(123, "hash", tmp_path / "main", "main")
+    missing = tmp_path / "missing.py"
+    monkeypatch.setattr(cli, "load_config", lambda *_args, **_kwargs: config)
+
+    assert cli.main([str(missing)]) == 2
+    assert (
+        capsys.readouterr().err
+        == f"tg: cannot read script {missing}: [Errno 2] No such file or directory: '{missing}'\n"
+    )
+
+
 def test_empty_account_is_rejected_in_cli(monkeypatch, tmp_path: Path, capsys) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')

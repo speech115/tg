@@ -14,7 +14,7 @@ One Python process. One real Telegram account. The full Telethon surface.
 authentication, locking, and Python process semantics. Telethon remains the Telegram
 API.
 
-There is no second Telegram framework to learn and no growing tree of commands.
+Telethon is the API; `tg` only provides the authenticated execution boundary.
 When a workflow is missing, write the missing logic as ordinary Python and run it
 through `tg`.
 
@@ -162,8 +162,7 @@ sessions    ~/.local/state/tg/<account>.session
 locking     one process per named session
 ```
 
-`tg` owns only the runtime boundary. Workflow policy, bulk orchestration,
-domain-specific shortcuts, and idempotency state stay outside the core.
+Workflow logic stays in ordinary Python scripts.
 
 ## Agent skill
 
@@ -203,8 +202,6 @@ The intended core remains:
 login · doctor · skill · Python execution
 ```
 
-No workflow registry. No local Telegram database. No governor. No parallel API layer
-on top of Telethon.
 
 ## Development
 
