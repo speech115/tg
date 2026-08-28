@@ -3,7 +3,25 @@ from pathlib import Path
 import pytest
 
 from tg import TgError
-from tg.config import DEFAULT_SESSION_ROOT, load_config
+from tg.config import DEFAULT_SESSION_ROOT, config_permissions_warning, load_config
+
+
+def test_config_permissions_warning_flags_group_and_other_access(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.touch(mode=0o644)
+
+    warning = config_permissions_warning(config_path)
+
+    assert warning == (
+        f"config is accessible by group/other users (mode 0644); run `chmod 600 {config_path}`"
+    )
+
+
+def test_config_permissions_warning_allows_owner_only_access(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.touch(mode=0o600)
+
+    assert config_permissions_warning(config_path) is None
 
 
 def test_load_config_maps_default_and_named_accounts_to_session_names(tmp_path: Path) -> None:

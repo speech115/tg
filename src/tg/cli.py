@@ -13,7 +13,7 @@ from telethon import types
 from telethon.tl import functions
 
 from . import TgError
-from .config import load_config
+from .config import config_permissions_warning, load_config, resolve_config_path
 from .session import client_for
 
 _COMMANDS = frozenset({"login", "doctor", "skill"})
@@ -67,7 +67,10 @@ async def run_script(
 
 
 async def doctor(account: str | None) -> None:
+    config_path = resolve_config_path()
     config = load_config(account=account)
+    if warning := config_permissions_warning(config_path):
+        print(f"warning={warning}", file=sys.stderr)
     session_file = config.session
     if session_file.suffix != ".session":
         session_file = session_file.with_name(f"{session_file.name}.session")
