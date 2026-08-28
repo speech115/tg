@@ -142,8 +142,14 @@ def test_skill_command_prints_skill(capsys) -> None:
     assert "name: tg" in capsys.readouterr().out
 
 
-def test_doctor_reports_authenticated_account(monkeypatch, capsys, tmp_path: Path) -> None:
+def test_doctor_reports_authenticated_account_and_config_warning(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     config = Config(123, "hash", tmp_path / "main", "main")
+    config_path = tmp_path / "config.toml"
+    config_path.touch(mode=0o644)
+    config_path.chmod(0o644)
+    monkeypatch.setenv("TG_CONFIG", str(config_path))
     session_file = tmp_path / "main.session"
     session_file.touch()
 
@@ -166,7 +172,8 @@ def test_doctor_reports_authenticated_account(monkeypatch, capsys, tmp_path: Pat
 
     asyncio.run(cli.doctor(None))
 
-    assert capsys.readouterr().out.splitlines() == [
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
         "config=ok",
         "account=ok name=main",
         f"session=ok path={session_file}",
@@ -174,3 +181,7 @@ def test_doctor_reports_authenticated_account(monkeypatch, capsys, tmp_path: Pat
         "auth=ok",
         "user=ok id=7 username=@example",
     ]
+    assert captured.err == (
+        f"warning=config is accessible by group/other users (mode 0644); "
+        f"run `chmod 600 {config_path}`\n"
+    )

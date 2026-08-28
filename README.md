@@ -75,6 +75,12 @@ api_id = 123456
 api_hash = "your-api-hash"
 ```
 
+Keep the config readable only by your user:
+
+```bash
+chmod 600 ~/.config/tg/config.toml
+```
+
 Alternatively, set `TG_API_ID` and `TG_API_HASH` in the environment.
 
 Set `TG_CONFIG` when the config lives elsewhere.

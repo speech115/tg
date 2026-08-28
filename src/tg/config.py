@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,6 +74,20 @@ def resolve_config_path(path: Path | None = None) -> Path:
         return path.expanduser()
     override = os.environ.get("TG_CONFIG")
     return Path(override).expanduser() if override else DEFAULT_CONFIG
+
+
+def config_permissions_warning(path: Path) -> str | None:
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        return f"cannot inspect config permissions: {exc}"
+    if mode & 0o077:
+        return (
+            f"config is accessible by group/other users (mode {mode:04o}); run `chmod 600 {path}`"
+        )
+    return None
 
 
 def load_config(path: Path | None = None, *, account: str | None = None) -> Config:

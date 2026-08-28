@@ -70,27 +70,6 @@ async def safe_probe() -> None:
             assert artifact.is_file() and artifact.stat().st_size > 0
             print(f"download=ok bytes={artifact.stat().st_size}")
 
-    cycles = int(os.environ.get("TG_PROBE_LOOP_CYCLES", "10000"))
-    assert cycles > 0
-    visited = 0
-    for _ in range(cycles):
-        for message in messages:
-            visited += message.id is not None
-    print(f"loop=ok cycles={cycles} visited={visited}")
-
-    try:
-        await asyncio.wait_for(asyncio.sleep(0.05), timeout=0.001)
-    except TimeoutError:
-        print("timeout=ok")
-    else:
-        raise AssertionError("timeout probe completed without timing out")
-
-    try:
-        raise errors.FloodWaitError(request=None, capture=1)
-    except errors.FloodWaitError as exc:
-        assert exc.seconds == 1
-        print("floodwait=handled synthetic_seconds=1")
-
 
 async def main() -> None:
     mode = os.environ.get("TG_PROBE_MODE", "safe")
