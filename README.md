@@ -1,8 +1,8 @@
-<img src="https://raw.githubusercontent.com/speech115/tg/main/static/banner-ink.svg" alt="tg-harness" width="100%" />
+<img src="https://raw.githubusercontent.com/speech115/tg/main/static/banner-ink.svg" alt="tg" width="100%" />
 
 <div align="center">
 
-# tg-harness
+# tg
 
 **A tiny authenticated Telegram harness for agents and humans.**
 
@@ -10,7 +10,7 @@ One Python process. One real Telegram account. The full Telethon surface.
 
 </div>
 
-`tg-harness` keeps the runtime deliberately small: configuration, named sessions,
+`tg` keeps the runtime deliberately small: configuration, named sessions,
 authentication, locking, and Python process semantics. Telethon remains the Telegram
 API.
 
@@ -189,42 +189,7 @@ Treat these as secrets:
 The runtime keeps sessions outside the repository and serializes access to each named
 session with a lock.
 
-## Why it stays small
-
-A missing Telegram capability is not a reason to add another core command.
-
-Start with `tg`. If a workflow becomes repetitive, save the Python program as a
-reusable script.
-
-The intended core remains:
-
-```text
-login · doctor · skill · Python execution
-```
-
-
-## Development
-
-```bash
-git clone https://github.com/speech115/tg.git
-cd tg
-
-./tg doctor
-
-uv sync --locked --dev
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-uv build --no-sources
-uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
-uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
-```
-
-These local commands lint, test, build, and smoke-test both distributions. No
-GitHub Actions runner is required.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for scope, integration probes, and release
-instructions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and integration instructions.
 
 ## License
 

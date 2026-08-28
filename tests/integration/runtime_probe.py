@@ -1,7 +1,7 @@
 """Exercise the public ``tg`` boundary against a real Telegram session.
 
 The default mode is read-only. Other modes deliberately exercise the process
-boundary and are selected with ``TG_BOUNDARY_MODE``.
+runtime and are selected with ``TG_PROBE_MODE``.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ async def safe_probe() -> None:
     assert len(messages) <= 200
     print(f"messages=ok count={len(messages)}")
 
-    search_term = os.environ.get("TG_BOUNDARY_SEARCH", "tg").strip() or "tg"
+    search_term = os.environ.get("TG_PROBE_SEARCH", "tg").strip() or "tg"
     search_results = await client.get_messages("me", search=search_term, limit=3)
     assert len(search_results) <= 3
     print(f"search=ok results={len(search_results)}")
@@ -45,7 +45,7 @@ async def safe_probe() -> None:
     assert full_user.users and full_user.users[0].id == me.id
     print("raw_tl=ok")
 
-    max_media_bytes = int(os.environ.get("TG_BOUNDARY_MAX_MEDIA_BYTES", "10000000"))
+    max_media_bytes = int(os.environ.get("TG_PROBE_MAX_MEDIA_BYTES", "10000000"))
     media = next(
         (
             message
@@ -70,11 +70,9 @@ async def safe_probe() -> None:
             assert artifact.is_file() and artifact.stat().st_size > 0
             print(f"download=ok bytes={artifact.stat().st_size}")
 
-    cycles = int(os.environ.get("TG_BOUNDARY_LOOP_CYCLES", "10000"))
+    cycles = int(os.environ.get("TG_PROBE_LOOP_CYCLES", "10000"))
     assert cycles > 0
     visited = 0
-    # ponytail: keep the large loop local to avoid an artificial API flood;
-    # add a bounded request loop only when a real rate-limit fixture exists.
     for _ in range(cycles):
         for message in messages:
             visited += message.id is not None
@@ -95,17 +93,17 @@ async def safe_probe() -> None:
 
 
 async def send_probe() -> None:
-    target = os.environ.get("TG_BOUNDARY_SEND_TO")
-    text = os.environ.get("TG_BOUNDARY_SEND_TEXT")
+    target = os.environ.get("TG_PROBE_SEND_TO")
+    text = os.environ.get("TG_PROBE_SEND_TEXT")
     if not target or not text:
-        raise ValueError("send mode requires TG_BOUNDARY_SEND_TO and TG_BOUNDARY_SEND_TEXT")
+        raise ValueError("send mode requires TG_PROBE_SEND_TO and TG_PROBE_SEND_TEXT")
     sent = await client.send_message(target, text)
     assert sent is not None and sent.id
     print("send=ok")
 
 
 async def main() -> None:
-    mode = os.environ.get("TG_BOUNDARY_MODE", "safe")
+    mode = os.environ.get("TG_PROBE_MODE", "safe")
     if mode == "safe":
         await safe_probe()
     elif mode == "send":
@@ -118,7 +116,7 @@ async def main() -> None:
         print("hang=started", flush=True)
         await asyncio.Event().wait()
     else:
-        raise ValueError(f"unknown TG_BOUNDARY_MODE: {mode}")
+        raise ValueError(f"unknown TG_PROBE_MODE: {mode}")
 
 
 await main()  # noqa: F704

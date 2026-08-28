@@ -67,16 +67,16 @@ async def drop_one_response(request: object) -> None:
 
 
 async def send_probe() -> None:
-    target = os.environ.get("TG_SEND_BOUNDARY_TARGET")
+    target = os.environ.get("TG_SEND_PROBE_TARGET")
     if not target:
-        raise ValueError("set TG_SEND_BOUNDARY_TARGET explicitly, for example: me")
+        raise ValueError("set TG_SEND_PROBE_TARGET explicitly, for example: me")
     assert client.is_connected()
 
     token = uuid.uuid4().hex
-    plain_marker = f"tg-send-boundary-{token}-plain"
-    file_marker = f"tg-send-boundary-{token}-file"
-    dedup_marker = f"tg-send-boundary-{token}-dedup"
-    uncertain_marker = f"tg-send-boundary-{token}-uncertain"
+    plain_marker = f"tg-send-probe-{token}-plain"
+    file_marker = f"tg-send-probe-{token}-file"
+    dedup_marker = f"tg-send-probe-{token}-dedup"
+    uncertain_marker = f"tg-send-probe-{token}-uncertain"
     markers = [plain_marker, file_marker, dedup_marker, uncertain_marker]
 
     try:

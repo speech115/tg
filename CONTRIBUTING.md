@@ -1,16 +1,12 @@
 # Contributing
 
-`tg` is intentionally small. The core owns configuration, named-session selection,
-authentication, locking, and Python process semantics. Telethon owns Telegram
-operations.
+`tg` is intentionally small: Telethon is the API and `tg` provides the authenticated
+execution boundary.
 
 ## Scope
 
-Before adding a core command or abstraction, first implement the workflow as ordinary
-Python through `tg`.
-
-Save a script when a workflow becomes repetitive. Extend the core only when ordinary
-Python and Telethon cannot express the need cleanly.
+Implement workflows as ordinary Python through `tg` first. Extend the core only when
+ordinary Python and Telethon cannot express the need cleanly.
 
 ## Development
 
@@ -21,65 +17,23 @@ uv sync --locked --dev
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
-uv build --no-sources
-uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
-uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
 ```
 
-These are the release gate. They run locally and do not require GitHub Actions.
+These checks run locally and do not require GitHub Actions.
 
 ## Integration probes
 
-The integration probes use a real authorized Telegram session and are not part of the
-normal unit-test suite.
-
-Read-only boundary probe:
+Integration probes use a real authorized Telegram session and are not part of the
+normal unit-test suite:
 
 ```bash
-tg tests/integration/boundary_run.py
+tg tests/integration/runtime_probe.py
 ```
 
-The send boundary probe mutates the explicitly selected target and cleans up its test
-messages:
+The send probe mutates the explicitly selected target and cleans up its test messages:
 
 ```bash
-TG_SEND_BOUNDARY_TARGET=me tg tests/integration/send_boundary.py
+TG_SEND_PROBE_TARGET=me tg tests/integration/send_probe.py
 ```
 
 Do not point mutating probes at accounts or chats you are unwilling to modify.
-
-## Release
-
-The PyPI distribution name is `tg-harness`; the installed command remains `tg`.
-The PyPI name `tg` is already used by another project.
-
-For each release:
-
-1. Update the version in `pyproject.toml` and `src/tg/__init__.py`.
-2. Run `uv lock` and the full local checks.
-3. Build and smoke-test both distributions:
-
-   ```bash
-   uv build --no-sources
-   uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
-   uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
-   ```
-
-4. Publish from a machine with PyPI credentials:
-
-   ```bash
-   uv publish
-   ```
-
-5. Create and push an annotated version tag, for example:
-
-   ```bash
-   git tag -a v0.1.1 -m v0.1.1
-   git push origin v0.1.1
-   ```
-
-6. Create the GitHub Release manually, if desired:
-
-   ```bash
-   gh release create v0.1.1 dist/* --verify-tag --generate-notes
-   ```
