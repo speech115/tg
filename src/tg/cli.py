@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import argparse
 import ast
 import asyncio
@@ -39,7 +37,7 @@ async def login(account: str | None) -> None:
     config = load_config(account=account)
     async with client_for(config, require_auth=False) as client:
         await client.start()
-    print(f"logged in: {config.account}", file=sys.stderr)
+    print(f"logged in: {config.session.name}", file=sys.stderr)
 
 
 async def run_script(
@@ -60,7 +58,7 @@ async def run_script(
                 "client": client,
                 "functions": functions,
                 "types": types,
-                "account": config.account,
+                "account": config.session.name,
             },
             argv=[filename if script != "-" else "-", *script_args],
         )
@@ -74,13 +72,11 @@ async def doctor(account: str | None) -> None:
     session_file = config.session.with_suffix(".session")
     session_status = "ok" if session_file.exists() else "missing"
     print("config=ok")
-    print(f"account=ok name={config.account}")
+    print(f"account=ok name={config.session.name}")
     print(f"session={session_status} path={session_file}")
     if session_status == "missing":
         raise TgError(f"session is missing: {session_file}; run `tg login`")
-    async with client_for(config, require_auth=False) as client:
-        if not await client.is_user_authorized():
-            raise TgError("account is not authorized; run `tg login`")
+    async with client_for(config) as client:
         me = await client.get_me()
     username = f"@{me.username}" if me.username else "-"
     print("telegram=connected")

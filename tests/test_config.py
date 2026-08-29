@@ -40,9 +40,7 @@ def test_load_config_maps_default_and_named_accounts_to_session_names(tmp_path: 
     assert default.api_id == 123
     assert default.api_hash == "hash"
     assert default.session == DEFAULT_SESSION_ROOT / "main"
-    assert default.account == "main"
     assert selected.session == DEFAULT_SESSION_ROOT / "work"
-    assert selected.account == "work"
 
 
 @pytest.mark.parametrize("name", ["", "../foo", "../../something", "/tmp/x", "bad name", "é"])
@@ -60,7 +58,6 @@ def test_account_name_accepts_hyphen_and_underscore(tmp_path: Path) -> None:
 
     config = load_config(config_path, account="second-2_test")
 
-    assert config.account == "second-2_test"
     assert config.session == DEFAULT_SESSION_ROOT / "second-2_test"
 
 
