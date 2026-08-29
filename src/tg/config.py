@@ -64,8 +64,7 @@ def validate_account_name(name: str) -> str:
 
 
 def _session(account: str | None) -> tuple[str, Path]:
-    name = DEFAULT_ACCOUNT if account is None else account
-    validate_account_name(name)
+    name = validate_account_name(DEFAULT_ACCOUNT if account is None else account)
     return name, DEFAULT_SESSION_ROOT / name
 
 
