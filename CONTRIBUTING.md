@@ -29,11 +29,3 @@ normal unit-test suite:
 ```bash
 tg tests/integration/runtime_probe.py
 ```
-
-The send probe mutates the explicitly selected target and cleans up its test messages:
-
-```bash
-TG_SEND_PROBE_TARGET=me tg tests/integration/send_probe.py
-```
-
-Do not point mutating probes at accounts or chats you are unwilling to modify.

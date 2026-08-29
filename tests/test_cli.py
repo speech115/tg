@@ -7,31 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from tg import TgError, cli
+from tg import cli
 from tg.config import Config
-
-
-def test_script_parser_preserves_script_arguments() -> None:
-    args = cli.build_parser().parse_args(["--account", "work", "script.py", "--limit", "2"])
-
-    assert args.account == "work"
-    assert args.target == "script.py"
-    assert args.target_args == ["--limit", "2"]
-
-
-def test_bare_parser_defaults_to_stdin() -> None:
-    args = cli.build_parser().parse_args([])
-
-    assert args.target is None
-    assert args.target_args == []
-
-
-@pytest.mark.parametrize("command", ["login", "doctor", "skill"])
-def test_reserved_commands_are_parsed_as_targets(command: str) -> None:
-    args = cli.build_parser().parse_args([command])
-
-    assert args.target == command
-    assert args.target_args == []
 
 
 def test_main_defaults_to_stdin(monkeypatch) -> None:
@@ -70,16 +47,6 @@ def test_empty_stdin_is_rejected_before_config(monkeypatch, capsys) -> None:
 
     assert cli.main([]) == 2
     assert capsys.readouterr().err == "tg: script is empty\n"
-
-
-def test_main_formats_session_busy(monkeypatch, capsys) -> None:
-    async def fail(*_args: object, **_kwargs: object) -> None:
-        raise TgError("session is busy: /tmp/main")
-
-    monkeypatch.setattr(cli, "run_script", fail)
-
-    assert cli.main(["-"]) == 2
-    assert capsys.readouterr().err == "tg: session is busy: /tmp/main\n"
 
 
 def test_main_passes_account_and_script_args(monkeypatch) -> None:
@@ -145,7 +112,7 @@ def test_skill_command_prints_skill(capsys) -> None:
 def test_doctor_reports_authenticated_account_and_config_warning(
     monkeypatch, capsys, tmp_path: Path
 ) -> None:
-    config = Config(123, "hash", tmp_path / "main", "main")
+    config = Config(123, "hash", tmp_path / "main")
     config_path = tmp_path / "config.toml"
     config_path.touch(mode=0o644)
     config_path.chmod(0o644)
@@ -154,9 +121,6 @@ def test_doctor_reports_authenticated_account_and_config_warning(
     session_file.touch()
 
     class FakeClient:
-        async def is_user_authorized(self) -> bool:
-            return True
-
         async def get_me(self):
             return type("User", (), {"id": 7, "username": "example"})()
 
