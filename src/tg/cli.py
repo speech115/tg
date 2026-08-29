@@ -71,9 +71,7 @@ async def doctor(account: str | None) -> None:
     config = load_config(account=account)
     if warning := config_permissions_warning(config_path):
         print(f"warning={warning}", file=sys.stderr)
-    session_file = config.session
-    if session_file.suffix != ".session":
-        session_file = session_file.with_name(f"{session_file.name}.session")
+    session_file = config.session.with_suffix(".session")
     session_status = "ok" if session_file.exists() else "missing"
     print("config=ok")
     print(f"account=ok name={config.account}")

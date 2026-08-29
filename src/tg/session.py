@@ -11,7 +11,7 @@ from . import TgError
 from .config import Config
 
 
-def _secure_session(config: Config) -> Path:
+def _secure_session(config: Config) -> None:
     root = config.session.parent
     session = (
         config.session
@@ -25,7 +25,6 @@ def _secure_session(config: Config) -> Path:
             session.chmod(0o600)
     except OSError as exc:
         raise TgError(f"cannot secure Telegram session {root}: {exc}") from exc
-    return session
 
 
 @contextmanager

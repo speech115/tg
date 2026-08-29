@@ -25,7 +25,6 @@ async def find_marker_ids(target: str, marker: str, search: str) -> list[int]:
         if ids or attempt == 5:
             return ids
         await asyncio.sleep(0.2)
-    return []
 
 
 def raw_message(peer: object, text: str, random_id: int) -> object:
