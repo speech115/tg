@@ -175,7 +175,7 @@ Workflow logic stays in ordinary Python scripts.
 
 ## Agent skill
 
-The repository ships `skills/tg/SKILL.md`.
+The repository ships `src/tg/SKILL.md`.
 
 Use `tg skill` to print the bundled instructions. Its main rule is simple: bundle
 deterministic operations into one `tg` process and stop only at a real decision
