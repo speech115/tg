@@ -5,6 +5,7 @@ import inspect
 import sys
 from importlib.resources import files
 from pathlib import Path
+from types import CodeType, ModuleType
 from typing import Any
 
 from telethon import types
@@ -48,13 +49,12 @@ async def run_script(
     filename, source = read_source(script)
     if not source.strip():
         raise TgError("script is empty")
+    code = compile(source, filename, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     config = load_config(account=account)
     async with client_for(config) as client:
         await execute(
-            source,
-            filename,
+            code,
             {
-                "__name__": "__main__",
                 "client": client,
                 "functions": functions,
                 "types": types,
@@ -87,12 +87,8 @@ async def doctor(account: str | None) -> None:
 def skill() -> None:
     try:
         content = files("tg").joinpath("SKILL.md").read_text(encoding="utf-8")
-    except FileNotFoundError:
-        source_path = Path(__file__).resolve().parents[2] / "skills" / "tg" / "SKILL.md"
-        try:
-            content = source_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            raise TgError(f"cannot read bundled skill: {exc}") from exc
+    except OSError as exc:
+        raise TgError(f"cannot read bundled skill: {exc}") from exc
     print(content, end="" if content.endswith("\n") else "\n")
 
 
@@ -135,23 +131,26 @@ def read_source(script: str) -> tuple[str, str]:
 
 
 async def execute(
-    source: str,
-    filename: str,
+    code: CodeType,
     namespace: dict[str, Any],
     *,
     argv: list[str] | None = None,
 ) -> None:
+    filename = code.co_filename
+    module = ModuleType("__main__")
+    module.__dict__.update(namespace)
+    module.__file__ = filename
     previous_argv = sys.argv
     previous_path = sys.path[:]
-    namespace["__file__"] = filename
-    sys.argv = [filename] if argv is None else list(argv)
-    if not filename.startswith("<"):
-        sys.path.insert(0, str(Path(filename).expanduser().resolve().parent))
+    previous_main = sys.modules["__main__"]
     try:
-        code = compile(source, filename, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-        result = eval(code, namespace)
+        sys.argv = [filename] if argv is None else list(argv)
+        sys.path.insert(0, "" if filename.startswith("<") else str(Path(filename).parent))
+        sys.modules["__main__"] = module
+        result = eval(code, module.__dict__)
         if inspect.isawaitable(result):
             await result
     finally:
         sys.argv = previous_argv
         sys.path[:] = previous_path
+        sys.modules["__main__"] = previous_main

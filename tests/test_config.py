@@ -75,3 +75,23 @@ def test_tg_config_overrides_default_path(monkeypatch, tmp_path: Path) -> None:
 
     assert config.api_id == 456
     assert config.api_hash == "custom"
+
+
+@pytest.mark.parametrize("api_id", ["true", "false", "1.9", "0", "-3", "inf", "[]", '"bad"'])
+def test_api_id_must_be_a_positive_integer(api_id: str, tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(f'[telegram]\napi_id = {api_id}\napi_hash = "hash"\n')
+
+    with pytest.raises(TgError, match="api_id must be a positive integer"):
+        load_config(config_path)
+
+
+def test_environment_credentials_override_config(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[telegram]\napi_id = 123\napi_hash = "hash"\n')
+    monkeypatch.setenv("TG_API_ID", "456")
+    monkeypatch.setenv("TG_API_HASH", "from-env")
+
+    config = load_config(config_path)
+
+    assert (config.api_id, config.api_hash) == (456, "from-env")

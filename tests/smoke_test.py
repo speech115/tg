@@ -1,10 +1,13 @@
 import subprocess
+import sys
 from importlib.metadata import version
+from pathlib import Path
 
 assert version("tg-harness")
+executable = Path(sys.executable).with_name("tg")
 
 result = subprocess.run(
-    ["tg", "--help"],
+    [executable, "--help"],
     check=True,
     capture_output=True,
     text=True,
@@ -14,7 +17,7 @@ assert "doctor" in result.stdout
 assert "skill" in result.stdout
 
 skill = subprocess.run(
-    ["tg", "skill"],
+    [executable, "skill"],
     check=True,
     capture_output=True,
     text=True,

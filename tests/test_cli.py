@@ -49,6 +49,18 @@ def test_empty_stdin_is_rejected_before_config(monkeypatch, capsys) -> None:
     assert capsys.readouterr().err == "tg: script is empty\n"
 
 
+def test_syntax_error_is_rejected_before_config(monkeypatch) -> None:
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("if :\n"))
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda *_args, **_kwargs: pytest.fail("invalid Python must not load config"),
+    )
+
+    with pytest.raises(SyntaxError):
+        cli.main([])
+
+
 def test_main_passes_account_and_script_args(monkeypatch) -> None:
     received: dict[str, object] = {}
 
@@ -89,12 +101,12 @@ def test_empty_account_is_rejected_in_cli(monkeypatch, tmp_path: Path, capsys) -
     assert capsys.readouterr().err == "tg: account must match [A-Za-z0-9_-]+\n"
 
 
-def test_module_entrypoint_uses_tg_config(monkeypatch, tmp_path: Path) -> None:
+def test_entrypoint_uses_tg_config(tmp_path: Path) -> None:
     config_path = tmp_path / "missing.toml"
     environment = os.environ | {"TG_CONFIG": str(config_path)}
 
     result = subprocess.run(
-        [sys.executable, "-m", "tg", "doctor"],
+        [Path(sys.executable).with_name("tg"), "doctor"],
         capture_output=True,
         text=True,
         env=environment,

@@ -69,9 +69,13 @@ def load_config(path: Path | None = None, *, account: str | None = None) -> Conf
             f"set TG_API_ID/TG_API_HASH or create {path} with [telegram].api_id and api_hash"
         )
     try:
+        if not isinstance(api_id_raw, (int, str)) or isinstance(api_id_raw, bool):
+            raise ValueError
         api_id = int(api_id_raw)
-    except (TypeError, ValueError) as exc:
-        raise TgError("telegram.api_id must be an integer") from exc
+        if api_id <= 0:
+            raise ValueError
+    except ValueError as exc:
+        raise TgError("telegram.api_id must be a positive integer") from exc
     if not isinstance(api_hash, str) or not api_hash:
         raise TgError("telegram.api_hash must be a non-empty string")
 
