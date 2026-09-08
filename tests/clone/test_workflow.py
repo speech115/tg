@@ -174,9 +174,9 @@ def test_forum_topics_and_reply_placement(tmp_path):
 
 
 def test_comments_interleave_and_resume_dependencies(tmp_path, monkeypatch):
-    from tg.clone import legs
+    from tg.clone import engine
 
-    monkeypatch.setattr(legs, "WINDOW", 1)
+    monkeypatch.setattr(engine, "WINDOW", 1)
     source = channel(broadcast=True)
     group = channel(11, megagroup=True)
     tg = Telegram(source, [message(source, 2), message(source, 3), message(source, 4)])

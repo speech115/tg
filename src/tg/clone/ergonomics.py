@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import copy
 from datetime import UTC, datetime
 
 from telethon import errors
@@ -121,53 +122,23 @@ async def _ensure_folder(tg, entities: list) -> str:
             if filter_id is None:
                 note("warning: clone folder unavailable: no free filter id")
                 return "unavailable"
-            if len(input_peers) > _MAX_INCLUDE_PEERS:
-                note("warning: clone folder unavailable: include_peers limit")
-                return "unavailable"
-            await tg(
-                functions.messages.UpdateDialogFilterRequest(
-                    id=filter_id,
-                    filter=types.DialogFilter(
-                        id=filter_id,
-                        title=types.TextWithEntities(text=FOLDER_TITLE, entities=[]),
-                        pinned_peers=[],
-                        include_peers=list(input_peers),
-                        exclude_peers=[],
-                    ),
-                )
+            existing = types.DialogFilter(
+                id=filter_id,
+                title=types.TextWithEntities(text=FOLDER_TITLE, entities=[]),
+                pinned_peers=[],
+                include_peers=[],
+                exclude_peers=[],
             )
-            return "added"
         present = {_peer_key(peer) for peer in existing.include_peers}
         missing = [peer for peer in input_peers if _peer_key(peer) not in present]
         if not missing:
             return "present"
-        combined = list(existing.include_peers) + missing
-        if len(combined) > _MAX_INCLUDE_PEERS:
+        updated = copy(existing)
+        updated.include_peers = [*existing.include_peers, *missing]
+        if len(updated.include_peers) > _MAX_INCLUDE_PEERS:
             note("warning: clone folder unavailable: include_peers limit")
             return "unavailable"
-        await tg(
-            functions.messages.UpdateDialogFilterRequest(
-                id=existing.id,
-                filter=types.DialogFilter(
-                    id=existing.id,
-                    title=existing.title,
-                    pinned_peers=list(existing.pinned_peers),
-                    include_peers=combined,
-                    exclude_peers=list(existing.exclude_peers),
-                    contacts=existing.contacts,
-                    non_contacts=existing.non_contacts,
-                    groups=existing.groups,
-                    broadcasts=existing.broadcasts,
-                    bots=existing.bots,
-                    exclude_muted=existing.exclude_muted,
-                    exclude_read=existing.exclude_read,
-                    exclude_archived=existing.exclude_archived,
-                    title_noanimate=existing.title_noanimate,
-                    emoticon=existing.emoticon,
-                    color=existing.color,
-                ),
-            )
-        )
+        await tg(functions.messages.UpdateDialogFilterRequest(id=updated.id, filter=updated))
         return "added"
     except errors.FloodWaitError:
         raise

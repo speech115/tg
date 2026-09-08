@@ -10,10 +10,9 @@ from telethon.tl import functions, types
 
 from tg.clone import Store
 from tg.clone.__main__ import export, status
+from tg.clone.media import CHUNK_SIZE, download_for_reupload, media_key, resume_offset, upload_parts
 from tg.clone.publish import submit
-from tg.clone.reupload import download_for_reupload, media_key, resume_offset
 from tg.clone.support import PolicyError
-from tg.clone.transfer import CHUNK_SIZE, upload_parts
 
 from .fake import Telegram, channel, document, message
 

@@ -180,14 +180,30 @@ histories, including albums, replies and linked discussions. It keeps its own
 resumable state while using the client supplied by `tg`.
 
 ```bash
-tg workflows/clone.py init channel:123456789
-tg workflows/clone.py init channel:123456789 --commit PREVIEW_ID
-tg workflows/clone.py sync channel:123456789
-python -m tg.clone status
+tg <<'PYTHON'
+from tg.clone import clone
+
+# Preview: no destinations or copied messages are created.
+print(await clone(client, "channel:123456789"))
+PYTHON
 ```
 
-See [the clone workflow guide](docs/clone.md) for the installed-package entry point,
-limits, previews, offline export and recovery behavior.
+After reviewing the source, run ordinary Python with explicit publication consent:
+
+```python
+from tg.clone import clone
+
+result = await clone(client, "channel:123456789", commit=True, limit=50)
+```
+
+The same call initializes a new clone or resumes an existing one. Limits count
+complete batches, not individual album members. The supplied `client` and outer
+`tg --account ...` invocation remain responsible for authentication and sessions.
+There is no new built-in command, connection, daemon or agent framework.
+
+The earlier `run(client, argv)` interface, `workflows/clone.py`, and offline
+`python -m tg.clone status|export` commands remain available. See
+[the clone workflow guide](docs/clone.md) for recovery, compatibility and limits.
 
 ## Agent skill
 
