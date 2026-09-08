@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import copy
 from datetime import UTC, datetime
 
-from telethon import errors
+from telethon import errors, utils
 from telethon.tl import functions, types
 
 from .support import note
@@ -36,22 +36,6 @@ def _is_muted_forever(settings) -> bool:
         return int(mute_until) >= MUTE_FOREVER_UNTIL - 1
     except (TypeError, ValueError):
         return False
-
-
-def _peer_key(peer) -> tuple | None:
-    if isinstance(peer, types.InputPeerChannel):
-        return ("channel", peer.channel_id)
-    if isinstance(peer, types.InputPeerUser):
-        return ("user", peer.user_id)
-    if isinstance(peer, types.InputPeerChat):
-        return ("chat", peer.chat_id)
-    if isinstance(peer, types.PeerChannel):
-        return ("channel", peer.channel_id)
-    if isinstance(peer, types.PeerUser):
-        return ("user", peer.user_id)
-    if isinstance(peer, types.PeerChat):
-        return ("chat", peer.chat_id)
-    return None
 
 
 async def _mute_peer(tg, entity) -> bool:
@@ -129,8 +113,8 @@ async def _ensure_folder(tg, entities: list) -> str:
                 include_peers=[],
                 exclude_peers=[],
             )
-        present = {_peer_key(peer) for peer in existing.include_peers}
-        missing = [peer for peer in input_peers if _peer_key(peer) not in present]
+        present = {utils.get_peer_id(peer) for peer in existing.include_peers}
+        missing = [peer for peer in input_peers if utils.get_peer_id(peer) not in present]
         if not missing:
             return "present"
         updated = copy(existing)
