@@ -43,12 +43,28 @@ def _record_destination_name(clone_state, destination) -> None:
 
 
 async def _resolve_source(tg, store, source: str, *, account_user_id: int | None = None):
-    """Resolve SOURCE to an entity. Pass ``account_user_id`` where a clone must already
-    exist, so a title can be answered from state instead of Telegram."""
+    """Explicit Telegram references win over account-scoped saved clone aliases."""
+    source = source.strip()
     kind, separator, number = source.partition(":")
     peer_types = {"user": types.PeerUser, "chat": types.PeerChat, "channel": types.PeerChannel}
     if separator and kind in peer_types and number.isdecimal():
         ref = peer_types[kind](state.valid_id(int(number), 2**63 - 1))
+    elif source.lower().startswith(
+        (
+            "@",
+            "http://",
+            "https://",
+            "tg://",
+            "t.me/",
+            "telegram.me/",
+            "telegram.dog/",
+            "www.t.me/",
+            "www.telegram.me/",
+            "www.telegram.dog/",
+        )
+    ):
+        # Let Telethon resolve or reject explicit references; never fall back to a title.
+        ref = source
     else:
         ref = recorded_source_ref(store, account_user_id, source) if account_user_id else None
         if ref is None:
@@ -74,7 +90,9 @@ def _supersede_status(store, clone_id: str, replace: bool) -> dict:
 async def preview_init(
     tg, store, me, source: str, *, replace: bool = False, no_comments: bool = False
 ) -> dict:
-    entity, source_kind, source_title = await _resolve_source(tg, store, source)
+    entity, source_kind, source_title = await _resolve_source(
+        tg, store, source, account_user_id=me.id
+    )
     total = (await tg.get_messages(entity, limit=0)).total
     clone_id = state.clone_id(me.id, entity.id, source_kind)
     peers_to_create = await _peers_to_create(
@@ -190,7 +208,7 @@ async def _apply_ergonomics(tg, clone_state, destination):
 
 async def commit_init(tg, store, me, source: str, payload: dict) -> dict:
     replace = bool(payload.get("replace"))
-    entity, source_kind, _ = await _resolve_source(tg, store, source)
+    entity, source_kind, _ = await _resolve_source(tg, store, source, account_user_id=me.id)
     if (
         me.id != payload["account_user_id"]
         or entity.id != payload["source_peer_id"]
