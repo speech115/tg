@@ -199,17 +199,10 @@ async def comment_events(tg, clone, source_channel, destination, ctx):
         source_channel.id,
         destination,
     )
-    events = aiter(
-        batching.plan(tg.iter_messages(source_group, min_id=clone.discussion_cursor, reverse=True))
-    )
-    while True:
-        try:
-            event = await anext(events)
-        except StopAsyncIteration:
-            return
-        except telethon_errors.FloodWaitError:
-            raise
-        except ACCESS_ERRORS:
-            _degrade(clone)
-            return
-        yield event
+    try:
+        async for event in batching.plan(
+            tg.iter_messages(source_group, min_id=clone.discussion_cursor, reverse=True)
+        ):
+            yield event
+    except ACCESS_ERRORS:
+        _degrade(clone)
