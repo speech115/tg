@@ -50,3 +50,33 @@ For sends that need retry control, choose and own a `random_id` in the script;
 `tg` does not persist workflow state or idempotency state.
 
 If a workflow becomes repetitive, save the Python program as a reusable script.
+
+## Clone workflow
+
+For cloning a complete history, reuse the bundled `tg.clone` workflow. Do not rebuild
+its album grouping, reply maps, transfer checkpoints or send journal in a one-off
+script. It uses the authenticated `client` already supplied by `tg`:
+
+```python
+from tg.clone import run
+
+result = await run(client, ["init", "channel:123456789"])
+print(result)
+```
+
+`init SOURCE` returns a five-minute preview; `init SOURCE --commit PREVIEW_ID`
+creates private destinations. `sync SOURCE` copies history; `--limit N` counts
+complete batches, and `--max-runtime SECONDS` finishes the current batch before
+stopping. `roster SOURCE` refreshes participants. `refresh SOURCE` previews missing
+attribution prefixes and also requires `--commit PREVIEW_ID` to edit.
+
+Prefer typed `channel:ID`, `chat:ID` or `user:ID` source references. Clone writes stay
+under `~/.local/state/tg/clone/`. For offline inspection, run `python -m tg.clone
+status`; `python -m tg.clone export CLONE_ID --output state.json` includes all maps
+and outcomes without connecting to Telegram. The checkout wrapper is
+`workflows/clone.py`.
+
+Poll snapshots do not vote unless `--capture-poll-votes` was explicitly requested.
+On a pending send or unexpected destination tail, inspect state; do not delete the
+journal or replace random IDs to force a retry. Existing old-CLI clone state is not
+imported by this workflow.
