@@ -12,26 +12,27 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-      - name: Install test tools
-        run: python -m pip install 'telethon==1.44.0' pytest ruff
-      - name: Baseline tests
+          python-version: ${{ matrix.python }}
+      - name: Install package and test tools
+        run: python -m pip install . pytest ruff
+      - name: Tests
         run: PYTHONPATH=src python -m pytest -q
-      - name: Prepare offline review bundle
-        if: always()
+      - name: Lint and format
         run: |
-          mkdir -p /tmp/clone-review/wheels
-          git archive --format=tar HEAD > /tmp/clone-review/tg.tar
-          python -m pip wheel --wheel-dir /tmp/clone-review/wheels 'telethon==1.44.0' ruff 'hatchling>=1.27'
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: clone-review-baseline
-          path: /tmp/clone-review
-          retention-days: 1
+          ruff check .
+          ruff format --check .
+      - name: Installed wheel surface
+        working-directory: /tmp
+        run: |
+          python -c "from tg.clone import clone, run, Store; assert callable(clone) and callable(run)"
+          tg skill
+          python -m tg.clone --help
