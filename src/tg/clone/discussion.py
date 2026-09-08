@@ -123,8 +123,10 @@ async def anchor_for(tg, destination_channel, destination_post_id: int, cache: d
             peer=destination_channel, msg_id=destination_post_id
         )
     )
-    anchors = [getattr(item, "id", None) for item in getattr(response, "messages", None) or ()]
-    found = [item for item in anchors if type(item) is int and 0 < item <= 2147483647]
-    anchor = found[0] if found else None
-    cache[destination_post_id] = anchor
-    return anchor
+    # Albums arrive in reverse order; only the leading post accepts this RPC.
+    # Cache every member by its source post so replies can target individual photos.
+    for item in getattr(response, "messages", None) or ():
+        post_id = autoforward_post_id(item, destination_channel.id)
+        if post_id is not None and type(item.id) is int and 0 < item.id <= 2147483647:
+            cache[post_id] = item.id
+    return cache.setdefault(destination_post_id, None)

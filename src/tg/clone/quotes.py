@@ -200,14 +200,34 @@ async def _place_thread(
             quote_offset=header.quote_offset,
         )
     elif plan.reply_to is None:
-        if plan.body_prefix is not None:
+        reply_to = await _anchor_parent(ctx, leg, header, found)
+        if reply_to is None:
+            if plan.body_prefix is None:
+                return plan
             reply_to = types.InputReplyToMessage(reply_to_msg_id=found)
-        else:
-            return plan
     else:
         reply_to = cast(types.InputReplyToMessage, copy(plan.reply_to))
         reply_to.top_msg_id = found
     return transport.as_reuploaded(replace(plan, reply_to=reply_to))
+
+
+async def _anchor_parent(ctx, leg, header, thread_root):
+    if header.reply_to_peer_id is not None and not attribution.same_peer(
+        header.reply_to_peer_id, ctx.source_group
+    ):
+        return None
+    post_id = await _source_post(ctx, header.reply_to_msg_id)
+    mapped = None if post_id is None else leg.clone_state.dest_for(post_id)
+    parent = None if mapped is None else await _destination_anchor(ctx, mapped)
+    if parent is None:
+        return None
+    return types.InputReplyToMessage(
+        reply_to_msg_id=parent,
+        top_msg_id=thread_root,
+        quote_text=header.quote_text,
+        quote_entities=list(header.quote_entities or ()) or None,
+        quote_offset=header.quote_offset,
+    )
 
 
 async def _unreachable_fallback(

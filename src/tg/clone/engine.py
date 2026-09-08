@@ -119,12 +119,17 @@ async def _peers_to_create(
         existing = store.load(clone_id)
     except PolicyError:
         existing = None
-    if not replace and existing is not None and (existing.destination_peer_id is not None):
-        return 0
-    if no_comments or source_kind != "broadcast":
-        return 1
+    active = None if replace else existing
+    count = int(active is None or active.destination_peer_id is None)
+    if (
+        no_comments
+        or source_kind != "broadcast"
+        or active is not None
+        and (active.comments == "disabled" or active.discussion_destination_peer_id is not None)
+    ):
+        return count
     full = await tg(functions.channels.GetFullChannelRequest(entity))
-    return 2 if discussion.linked_chat_id(full.full_chat) is not None else 1
+    return count + int(discussion.linked_chat_id(full.full_chat) is not None)
 
 
 async def _init_destination(tg, clone_state, shape_ok, kind_name):

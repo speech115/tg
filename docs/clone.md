@@ -146,8 +146,15 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-Server-side forwarding and account-specific Telegram permissions still need a live
-smoke test against explicitly selected test peers before an unattended large clone.
+A private live smoke test verified 78 channel messages, seven albums and five
+comments, including text/entities, media identities, audio/video attributes and
+discussion placement. Initialization recovered from a creation FloodWait. A stop
+after an album receipt but before its mapping commit resumed without duplicate
+messages. Comments were sampled separately because the source clone stored hundreds
+of automatic forwards before its first comment.
+
+The live test covers forwarding and media-reference reuse. Protected reuploads,
+forums and poll snapshots remain covered by local tests, not this live sample.
 
 Adapted from the MIT-licensed
 [`speech115/tgcli` clone module at e12a2bd](https://github.com/speech115/tgcli/tree/e12a2bd7cdeeeed6fe4dc078464d8b2e22da5c12).

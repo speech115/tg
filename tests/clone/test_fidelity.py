@@ -322,3 +322,64 @@ def test_inaccessible_comments_keep_existing_cursor_and_mappings(tmp_path):
     with Store(tmp_path, readonly=True) as store:
         clone = store.all()[0]
         assert clone.discussion_cursor == 2 and clone.discussion_dest_for(2) == 20
+
+
+def test_comment_reply_to_album_member_keeps_thread(tmp_path):
+    source, group = channel(broadcast=True), channel(11, megagroup=True)
+
+    class AlbumDiscussion(Telegram):
+        def anchor(self, request):
+            if request.msg_id != 2:
+                raise errors.MsgIdInvalidError(request)
+            items = self.history[self.links[utils.get_peer_id(request.peer)]]
+            return NS(messages=list(reversed([m for m in items if m.fwd_from])))
+
+    tg = AlbumDiscussion(
+        source, [message(source, i, media=document(i), grouped_id=77) for i in (2, 3)]
+    )
+    anchors = [
+        message(
+            group,
+            i,
+            media=document(i),
+            grouped_id=77,
+            fwd_from=types.MessageFwdHeader(
+                date=NOW, saved_from_peer=types.PeerChannel(10), saved_from_msg_id=i
+            ),
+        )
+        for i in (2, 3)
+    ]
+    tg.add(
+        group,
+        [
+            *anchors,
+            message(
+                group,
+                4,
+                "album comment",
+                reply_to=types.MessageReplyHeader(reply_to_msg_id=3, reply_to_top_id=2),
+            ),
+        ],
+    )
+    tg.full[utils.get_peer_id(source)].linked_chat_id = 11
+    initialize(tg, tmp_path)
+    result = call(tg, tmp_path, "sync", "channel:10")
+    assert result["sync"]["reply_flattened"] == 0
+    assert tg.sent[-1].reply_to.reply_to_msg_id == 3
+    assert tg.sent[-1].reply_to.top_msg_id == 2
+
+
+def test_init_preview_counts_discussion_missing_after_interruption(tmp_path):
+    source, group = channel(broadcast=True), channel(11, megagroup=True)
+    tg = Telegram(source)
+    tg.add(group)
+    tg.full[utils.get_peer_id(source)].linked_chat_id = 11
+    assert call(tg, tmp_path, "init", "channel:10")["peers_to_create"] == 2
+    initialize(tg, tmp_path)
+    assert call(tg, tmp_path, "init", "channel:10")["peers_to_create"] == 0
+    with Store(tmp_path) as store:
+        clone = store.all()[0]
+        clone.discussion_destination_peer_id = None
+        clone.discussion_linked = False
+        clone.save()
+    assert call(tg, tmp_path, "init", "channel:10")["peers_to_create"] == 1
