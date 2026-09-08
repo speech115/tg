@@ -1,0 +1,37 @@
+name: Clone regression
+
+on:
+  push:
+    branches: [codex/clone-harness-refactor]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install test tools
+        run: python -m pip install 'telethon==1.44.0' pytest ruff
+      - name: Baseline tests
+        run: PYTHONPATH=src python -m pytest -q
+      - name: Prepare offline review bundle
+        if: always()
+        run: |
+          mkdir -p /tmp/clone-review/wheels
+          git archive --format=tar HEAD > /tmp/clone-review/tg.tar
+          python -m pip wheel --wheel-dir /tmp/clone-review/wheels 'telethon==1.44.0' ruff 'hatchling>=1.27'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clone-review-baseline
+          path: /tmp/clone-review
+          retention-days: 1
