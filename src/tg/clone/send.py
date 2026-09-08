@@ -12,10 +12,6 @@ from .media import media_identity
 from .support import PolicyError
 
 
-def _body(message, author, plan):
-    return quotes.apply_body(message, author, plan)
-
-
 def _reference(media):
     result = utils.get_input_media(media)
     if hasattr(result, "spoiler"):
@@ -40,7 +36,7 @@ def _identity(source, destination, messages, plan, author, reply_to, mode, prove
         "messages": [
             {
                 "id": message.id,
-                "body": _body(message, author if i == 0 else None, plan),
+                "body": quotes.apply_body(message, author if i == 0 else None, plan),
                 "media": media_identity(message.media),
                 "kind": type(message.media).__name__,
                 "spoiler": getattr(message.media, "spoiler", None),
@@ -81,7 +77,7 @@ async def _media_request(
 
     if len(messages) == 1:
         message = messages[0]
-        text, entities = _body(message, author, plan)
+        text, entities = quotes.apply_body(message, author, plan)
         common = dict(
             peer=destination, message=text, entities=entities, random_id=0, reply_to=reply_to
         )
@@ -96,7 +92,7 @@ async def _media_request(
             media = _reference(stored)
             if hasattr(media, "spoiler"):
                 media.spoiler = getattr(message.media, "spoiler", None)
-        text, entities = _body(message, author if index == 0 else None, plan)
+        text, entities = quotes.apply_body(message, author if index == 0 else None, plan)
         album.append(
             types.InputSingleMedia(media=media, random_id=0, message=text, entities=entities)
         )
