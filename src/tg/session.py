@@ -1,12 +1,18 @@
+import asyncio
 import fcntl
-from collections.abc import Iterator
-from contextlib import asynccontextmanager, contextmanager
+import math
+import os
+import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from telethon import TelegramClient
 
 from . import TgError
 from .config import Config
+
+DEFAULT_LOCK_TIMEOUT = 120.0
 
 
 def _secure_session(config: Config) -> None:
@@ -21,21 +27,55 @@ def _secure_session(config: Config) -> None:
         raise TgError(f"cannot secure Telegram session {root}: {exc}") from exc
 
 
-@contextmanager
-def session_lock(session: Path) -> Iterator[None]:
+@asynccontextmanager
+async def session_lock(
+    session: Path, *, timeout: float = DEFAULT_LOCK_TIMEOUT
+) -> AsyncIterator[None]:
+    if not math.isfinite(timeout) or timeout < 0:
+        raise TgError("lock timeout must be a finite non-negative number")
     lock_path = session.with_name(f"{session.name}.lock")
-    with lock_path.open("a") as handle:
+    with lock_path.open("a+") as handle:
+        owner = "unknown"
+        announced = False
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise TgError(f"session is busy: {session}") from exc
+            async with asyncio.timeout(timeout):
+                while True:
+                    try:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        handle.seek(0)
+                        owner = handle.read(32).strip()
+                        if not owner.isdecimal():
+                            owner = "unknown"
+                        if not announced and timeout:
+                            print(
+                                f"tg: session is busy: {session} (holder pid={owner}); "
+                                f"waiting up to {timeout:g}s",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                            announced = True
+                        # ponytail: polling is not FIFO; add a broker only if ordering matters.
+                        await asyncio.sleep(0.1)
+        except TimeoutError as exc:
+            raise TgError(
+                f"session is busy: {session} (holder pid={owner}); "
+                f"lock timeout after {timeout:g}s"
+            ) from exc
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{os.getpid()}\n")
+        handle.flush()
         yield
 
 
 @asynccontextmanager
-async def client_for(config: Config, *, require_auth: bool = True):
+async def client_for(
+    config: Config, *, require_auth: bool = True, lock_timeout: float = DEFAULT_LOCK_TIMEOUT
+):
     _secure_session(config)
-    with session_lock(config.session):
+    async with session_lock(config.session, timeout=lock_timeout):
         client = TelegramClient(
             str(config.session),
             config.api_id,

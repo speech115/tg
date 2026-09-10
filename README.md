@@ -56,10 +56,10 @@ uv tool install git+https://github.com/speech115/tg.git
 Then give the agent this instruction:
 
 ```text
-Use tg for Telegram. Run tg doctor first. If the account is not authorized, ask
-me to complete tg login. For Telegram work, use one tg program per decision
-boundary, prefer Telethon client methods, and fall back to functions.* / types.*
-for raw Telegram requests.
+Use tg for Telegram. Read tg skill. Run tg doctor for initial setup or diagnosis,
+not before every task. Ask me to handle login if authorization is missing; a busy
+session is not an authorization failure. Use one tg program per decision boundary,
+prefer client methods, and fall back to functions.* / types.* for raw requests.
 ```
 
 Requires Python 3.12+ and a POSIX system (macOS or Linux).
@@ -108,6 +108,55 @@ tg --account work script.py
 ```
 
 Account names must match `[A-Za-z0-9_-]+`.
+
+## Concurrent agents
+
+A named session still has exactly one owner. A competing invocation now waits
+**up to 120 seconds by default**, without constructing a Telegram client or
+connecting to Telegram. It reports the wait once on stderr, leaving stdout for
+script output. The timeout covers lock acquisition, not script execution.
+
+```bash
+tg script.py                       # wait up to 120 seconds
+tg --lock-timeout 300 script.py    # allow a longer wait
+tg --lock-timeout 0 script.py      # fail immediately if busy
+```
+
+Put runtime options before the command or script name. The wait is cancellable
+with Ctrl+C, is not FIFO, and never steals a lock. The lock file contains a
+best-effort owner PID for diagnosis; a leftover PID/file does not mean a lock
+is held. Do not delete `.lock` files or kill another agent to bypass contention.
+The OS releases the lock when its owning file descriptors close.
+
+For a download and a read to run simultaneously, set up **two independent
+Telegram authorizations** for the same profile. Choose an unused local name
+and log in manually with the same phone number, never by copying `.session`
+files or exporting the same authorization key:
+
+```bash
+tg --account main_media login
+tg --account main doctor
+tg --account main_media doctor
+```
+
+Check that both `doctor` outputs have the same `user=ok id=...`. After that
+one-time check, assign short reads to `main` and downloads to `main_media`:
+
+```bash
+tg read.py
+tg --account main_media download.py
+```
+
+`read.py` and `download.py` are your own ordinary Python scripts. Tasks using the
+same name still wait for each other. There is no automatic session pool, identity
+matching, or account switching. Agents must use only explicitly approved sessions.
+
+Save fetched data and exit `tg` before local analysis, transcription, or other
+non-Telegram work. Keep concurrency low and respect Telethon's `FloodWait` handling;
+do not rotate sessions to bypass a wait. This change preserves Telethon's built-in
+waits but does **not** add an account-wide rate limiter or coordinate waits across
+independent sessions. Separate sessions do not guarantee immunity from restrictions.
+See the [Telethon FAQ](https://docs.telethon.dev/en/stable/quick-references/faq.html).
 
 ## Run ordinary Python
 
