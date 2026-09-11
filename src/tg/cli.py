@@ -42,9 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def login(
-    account: str | None, *, lock_timeout: float = DEFAULT_LOCK_TIMEOUT
-) -> None:
+async def login(account: str | None, *, lock_timeout: float = DEFAULT_LOCK_TIMEOUT) -> None:
     config = load_config(account=account)
     async with client_for(config, require_auth=False, lock_timeout=lock_timeout) as client:
         await client.start()
@@ -76,9 +74,7 @@ async def run_script(
         )
 
 
-async def doctor(
-    account: str | None, *, lock_timeout: float = DEFAULT_LOCK_TIMEOUT
-) -> None:
+async def doctor(account: str | None, *, lock_timeout: float = DEFAULT_LOCK_TIMEOUT) -> None:
     config_path = resolve_config_path()
     config = load_config(account=account)
     if warning := config_permissions_warning(config_path):

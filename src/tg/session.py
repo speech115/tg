@@ -60,8 +60,7 @@ async def session_lock(
                         await asyncio.sleep(0.1)
         except TimeoutError as exc:
             raise TgError(
-                f"session is busy: {session} (holder pid={owner}); "
-                f"lock timeout after {timeout:g}s"
+                f"session is busy: {session} (holder pid={owner}); lock timeout after {timeout:g}s"
             ) from exc
         handle.seek(0)
         handle.truncate()
