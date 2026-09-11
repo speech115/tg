@@ -154,7 +154,7 @@ async def render(tg, message, *, peer=None, clone_state=None, capture_poll_votes
                 }
         text, entities = _poll_snapshot(working, chosen_option=chosen)
         return (text, entities, marker)
-    assert isinstance(media, types.MessageMediaStory), "render() requires fidelity.supports()"
+    assert isinstance(media, types.MessageMediaStory), "render() requires batching.supports()"
     try:
         peer_entity = await tg.get_entity(media.peer)
     except telethon_errors.FloodWaitError:

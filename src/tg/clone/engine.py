@@ -11,23 +11,22 @@ from telethon.tl import functions, types
 from . import (
     attribution,
     batching,
-    comments,
     discussion,
     ergonomics,
-    fidelity,
     init_peers,
-    legs,
     pin,
     quotes,
+    replies,
     roster,
     state,
     topics,
-    transport,
 )
 from . import progress as clone_progress
 from . import refresh as clone_refresh
 from . import send as clone_send
 from .support import PolicyError, note
+
+WINDOW = 50
 
 
 async def _resolve_destination(tg, destination_peer_id: int):
@@ -44,15 +43,31 @@ def _record_destination_name(clone_state, destination) -> None:
 
 
 async def _resolve_source(tg, store, source: str, *, account_user_id: int | None = None):
-    """Resolve SOURCE to an entity. Pass ``account_user_id`` where a clone must already
-    exist, so a title can be answered from state instead of Telegram."""
-    ref = recorded_source_ref(store, account_user_id, source) if account_user_id else None
-    if ref is None:
-        kind, separator, number = source.partition(":")
-        peer_types = {"user": types.PeerUser, "chat": types.PeerChat, "channel": types.PeerChannel}
-        if separator and kind in peer_types and number.isdecimal():
-            ref = peer_types[kind](state.valid_id(int(number), 2**63 - 1))
-        else:
+    """Explicit Telegram references win over account-scoped saved clone aliases."""
+    source = source.strip()
+    kind, separator, number = source.partition(":")
+    peer_types = {"user": types.PeerUser, "chat": types.PeerChat, "channel": types.PeerChannel}
+    if separator and kind in peer_types and number.isdecimal():
+        ref = peer_types[kind](state.valid_id(int(number), 2**63 - 1))
+    elif source.lower().startswith(
+        (
+            "@",
+            "http://",
+            "https://",
+            "tg://",
+            "t.me/",
+            "telegram.me/",
+            "telegram.dog/",
+            "www.t.me/",
+            "www.telegram.me/",
+            "www.telegram.dog/",
+        )
+    ):
+        # Let Telethon resolve or reject explicit references; never fall back to a title.
+        ref = source
+    else:
+        ref = recorded_source_ref(store, account_user_id, source) if account_user_id else None
+        if ref is None:
             ref = int(source) if source.lstrip("-").isdigit() else source
     try:
         entity = await tg.get_entity(ref)
@@ -75,7 +90,9 @@ def _supersede_status(store, clone_id: str, replace: bool) -> dict:
 async def preview_init(
     tg, store, me, source: str, *, replace: bool = False, no_comments: bool = False
 ) -> dict:
-    entity, source_kind, source_title = await _resolve_source(tg, store, source)
+    entity, source_kind, source_title = await _resolve_source(
+        tg, store, source, account_user_id=me.id
+    )
     total = (await tg.get_messages(entity, limit=0)).total
     clone_id = state.clone_id(me.id, entity.id, source_kind)
     peers_to_create = await _peers_to_create(
@@ -191,7 +208,7 @@ async def _apply_ergonomics(tg, clone_state, destination):
 
 async def commit_init(tg, store, me, source: str, payload: dict) -> dict:
     replace = bool(payload.get("replace"))
-    entity, source_kind, _ = await _resolve_source(tg, store, source)
+    entity, source_kind, _ = await _resolve_source(tg, store, source, account_user_id=me.id)
     if (
         me.id != payload["account_user_id"]
         or entity.id != payload["source_peer_id"]
@@ -239,6 +256,8 @@ async def commit_init(tg, store, me, source: str, payload: dict) -> dict:
     else:
         await init_peers.init_discussion(tg, destination, clone_state, full_chat, clone_id)
     applied = await _apply_ergonomics(tg, clone_state, destination)
+    clone_state.initialized = True
+    clone_state.save()
     return {
         "clone": {
             "id": clone_state.clone_id,
@@ -257,6 +276,20 @@ async def commit_init(tg, store, me, source: str, payload: dict) -> dict:
         },
         "ergonomics": applied,
     }
+
+
+def _description(clone, destination=None):
+    result = {
+        "id": clone.clone_id,
+        "source": {
+            "id": clone.source_peer_id,
+            "title": clone.source_title,
+            "kind": clone.source_kind,
+        },
+    }
+    if destination is not None:
+        result["destination"] = {"id": destination.id, "title": destination.title}
+    return result
 
 
 def _check_destination(destination, clone_state):
@@ -281,12 +314,7 @@ async def sync_text(
     max_runtime: float | None = None,
     capture_poll_votes: bool = False,
 ) -> dict:
-    source_entity, source_kind, _ = await _resolve_source(tg, store, source, account_user_id=me.id)
-    clone_state = store.load(state.clone_id(me.id, source_entity.id, source_kind))
-    if clone_state is None or clone_state.destination_peer_id is None:
-        raise PolicyError("clone is not initialized; run clone init first")
-    if clone_state.source_kind != source_kind:
-        raise PolicyError("clone source kind no longer matches initialized state")
+    source_entity, clone_state = await _load_clone(tg, store, me, source)
     if clone_state.comments == "enabled" and (not clone_state.discussion_linked):
         raise PolicyError("discussion is not linked yet; repeat init and commit its preview")
     clone_state.finish_pending()
@@ -322,7 +350,7 @@ class Sync:
         self.deadline = None if runtime is None else time.monotonic() + runtime
         self.capture_votes = capture_votes
         self.forum = clone.destination_kind == "forum"
-        self.posts = legs.posts(clone)
+        self.posts = clone.leg()
         self.resolve = quotes.ResolveContext(tg=tg, destination=destination)
         self.progress = clone_progress.SyncProgress(source.id, clone=clone)
         self.copied = self.batches = self.reply_flattened = 0
@@ -349,7 +377,7 @@ class Sync:
         unsupported = [
             {"id": message.id, "kind": kind}
             for message in messages
-            if (kind := fidelity.unsupported_kind(message)) is not None
+            if (kind := batching.unsupported_kind(message)) is not None
         ]
         if not unsupported:
             return False
@@ -359,7 +387,7 @@ class Sync:
                 leg.map_field,
                 message.id,
                 status="skipped",
-                reason=fidelity.unsupported_kind(message) or "unsupported-album",
+                reason=batching.unsupported_kind(message) or "unsupported-album",
             )
         leg.cursor = messages[-1].id
         self.clone.save()
@@ -377,30 +405,22 @@ class Sync:
             self.markup_dropped.extend(
                 {"id": message.id, "buttons": buttons}
                 for message in messages
-                if (buttons := fidelity.dropped_buttons(message))
+                if (buttons := batching.dropped_buttons(message))
             )
         self.progress.batch(count, mode)
 
-    async def copy_batch(self, messages, leg, source, destination):
+    async def copy_batch(self, messages, leg, source, destination, plan=None):
         if self.skip_unsupported(messages, leg):
             return
         await self.progress.resolve_total(self.tg, source)
-        plan = transport.decide(
+        plan = plan or replies.decide(
             messages,
             leg,
             source,
             posts_cursor=self.clone.cursor,
             posts_exhausted=self.posts_exhausted,
         )
-        plan = await quotes.resolve(
-            messages,
-            plan,
-            leg,
-            source,
-            self.resolve,
-            posts_cursor=self.clone.cursor,
-            posts_exhausted=self.posts_exhausted,
-        )
+        plan = await quotes.resolve(messages, plan, leg, self.resolve)
         if plan.mode == "deferred":
             return
         topic = None
@@ -433,7 +453,6 @@ class Sync:
             list(messages),
             plan,
             leg,
-            source,
             self.resolve,
         )
         self.record_result(messages, result)
@@ -478,17 +497,38 @@ class Sync:
 
     async def comments_window(self):
         self.progress.phase("comments", copied=len(self.clone.discussion_id_map))
-        self.more = await comments.sync_phase(
-            self.tg,
-            self.clone,
-            self.source,
-            self.destination,
-            self.copy_batch,
-            self.counters,
-            self.limited,
-            self.resolve,
-            posts_exhausted=self.posts_exhausted,
-        )
+        leg, ctx = self.clone.leg(discussion=True), self.resolve
+        self.more = False
+        async for event in discussion.comment_events(
+            self.tg, self.clone, self.source, self.destination, ctx
+        ):
+            if self.limited():
+                self.more = True
+                return
+            if isinstance(event, batching.ServiceSkip):
+                self.counters["skipped_service"] += 1
+                leg.cursor = event.message_id
+            elif (posts := discussion.anchor_posts(event.messages, self.source.id)) is not None:
+                if not self.posts_exhausted and any(p > self.clone.cursor for p in posts.values()):
+                    return
+                ctx.anchors.update(posts)
+                self.counters["skipped_autoforward"] += len(posts)
+                leg.cursor = event.messages[-1].id
+            else:
+                plan = replies.decide(
+                    event.messages,
+                    leg,
+                    ctx.source_group,
+                    posts_cursor=self.clone.cursor,
+                    posts_exhausted=self.posts_exhausted,
+                )
+                if plan.mode == "deferred":
+                    return
+                await self.copy_batch(
+                    event.messages, leg, ctx.source_group, ctx.destination_group, plan
+                )
+                continue
+            self.clone.save()
 
     async def run(self):
         pending = self.clone.store.pending(self.clone.clone_id)
@@ -496,7 +536,7 @@ class Sync:
             await self.comments_window()
         while not self.more and (not self.timed_out()) and (not self.posts_exhausted):
             linked = self.clone.comments == "enabled"
-            await self.posts_window(legs.WINDOW if linked else None)
+            await self.posts_window(WINDOW if linked else None)
             if linked and (not self.more) and (not self.timed_out()):
                 await self.comments_window()
         pinned = await self.finish()
@@ -518,14 +558,8 @@ class Sync:
     def result(self, pinned):
         data = {
             "clone": {
-                "id": self.clone.clone_id,
-                "source": {
-                    "id": self.source.id,
-                    "title": self.clone.source_title,
-                    "kind": self.clone.source_kind,
-                },
+                **_description(self.clone, self.destination),
                 "comments": self.clone.comments,
-                "destination": {"id": self.destination.id, "title": self.destination.title},
             },
             "sync": {
                 "copied": self.copied,
@@ -557,13 +591,18 @@ class Sync:
         return data
 
 
-async def _load_refresh_context(tg, store, me, source: str):
+async def _load_clone(tg, store, me, source):
     source_entity, source_kind, _ = await _resolve_source(tg, store, source, account_user_id=me.id)
     clone_state = store.load(state.clone_id(me.id, source_entity.id, source_kind))
     if clone_state is None or clone_state.destination_peer_id is None:
         raise PolicyError("clone is not initialized; run clone init first")
     if clone_state.source_kind != source_kind:
         raise PolicyError("clone source kind no longer matches initialized state")
+    return source_entity, clone_state
+
+
+async def _load_refresh_context(tg, store, me, source: str):
+    source_entity, clone_state = await _load_clone(tg, store, me, source)
     destination = await _resolve_destination(tg, clone_state.destination_peer_id)
     _check_destination(destination, clone_state)
     return (me, source_entity, destination, clone_state)
@@ -590,14 +629,7 @@ async def preview_refresh(tg, store, me, source: str) -> dict:
     return {
         "preview_id": preview["preview_id"],
         "expires_at": preview["expires_at"],
-        "clone": {
-            "id": clone_state.clone_id,
-            "source": {
-                "id": source_entity.id,
-                "title": clone_state.source_title,
-                "kind": clone_state.source_kind,
-            },
-        },
+        "clone": _description(clone_state),
         "refresh": {
             "eligible": pairs,
             "excluded": [{"source_id": item.source_id, "reason": item.reason} for item in excluded],
@@ -662,15 +694,7 @@ async def commit_refresh(tg, store, me, source: str, payload: dict) -> dict:
             pass
         edited.append({"source_id": source_id, "destination_id": destination_id})
     return {
-        "clone": {
-            "id": clone_state.clone_id,
-            "source": {
-                "id": source_entity.id,
-                "title": clone_state.source_title,
-                "kind": clone_state.source_kind,
-            },
-            "destination": {"id": destination.id, "title": destination.title},
-        },
+        "clone": _description(clone_state, destination),
         "refresh": {"edited": edited, "skipped": skipped, "count": len(edited)},
     }
 

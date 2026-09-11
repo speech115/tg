@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import batched
 
-from . import attribution, fidelity, quote_fallback, transport
+from . import attribution, batching, quotes, replies
 
 
 def _entities_equal(left, right) -> bool:
@@ -39,10 +39,10 @@ async def render_with_current_rules(tg, source, message, me, source_kind: str, c
             author = await attribution.forwarded_author_of(tg, message, cache)
     else:
         author = await attribution.author_of(tg, source, message, me, cache)
-    plan = transport.TransportPlan(
+    plan = replies.TransportPlan(
         mode="reuploaded", reply_to=None, reply_flattened=False, needs_author=True
     )
-    return quote_fallback.apply_body(message, author, plan)
+    return quotes.apply_body(message, author, plan)
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def _exclusion(message, destination, previous, first):
         return "missing"
     if message.fwd_from is None:
         return "not-forwarded"
-    if fidelity.supports(message):
+    if batching.supports(message):
         return "poll-snapshot"
     if destination.fwd_from is not None:
         return "native-reforward"

@@ -1,4 +1,4 @@
-"""Resolve replies and quotes, degrading only after definite Telegram refusals."""
+"""Resolve native quotes and render explicit fallbacks after definite refusals."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, cast
 from telethon import errors as telethon_errors
 from telethon.tl import functions, types
 
-from . import attribution, discussion, quote_fallback, replies, transport
+from . import attribution, discussion, replies
 
 
 @dataclass
@@ -161,8 +161,8 @@ async def _source_post(ctx: ResolveContext, anchor_id: int):
 
 
 async def _place_thread(
-    messages, plan: transport.TransportPlan, leg, ctx: ResolveContext
-) -> transport.TransportPlan:
+    messages, plan: replies.TransportPlan, leg, ctx: ResolveContext
+) -> replies.TransportPlan:
     """Re-point a comment's thread root at the destination's own anchor."""
     if ctx.source_group is None or ctx.source_channel_id is None:
         return plan
@@ -185,7 +185,7 @@ async def _place_thread(
             and ((mapped_top := leg.dest_for(top)) is not None)
             and (plan.reply_to is None)
         ):
-            return transport.as_reuploaded(
+            return replies.as_reuploaded(
                 replace(plan, reply_to=types.InputReplyToMessage(reply_to_msg_id=mapped_top))
             )
         return plan
@@ -208,7 +208,7 @@ async def _place_thread(
     else:
         reply_to = cast(types.InputReplyToMessage, copy(plan.reply_to))
         reply_to.top_msg_id = found
-    return transport.as_reuploaded(replace(plan, reply_to=reply_to))
+    return replies.as_reuploaded(replace(plan, reply_to=reply_to))
 
 
 async def _anchor_parent(ctx, leg, header, thread_root):
@@ -232,47 +232,33 @@ async def _anchor_parent(ctx, leg, header, thread_root):
 
 async def _unreachable_fallback(
     messages,
-    plan: transport.TransportPlan,
+    plan: replies.TransportPlan,
     classified: replies.Classification,
     ctx: ResolveContext,
     entity=None,
-) -> transport.TransportPlan:
+) -> replies.TransportPlan:
     title = None if entity is not None else await _peer_title(ctx, classified.peer, messages[0])
-    return quote_fallback.fallback_plan(
+    return fallback_plan(
         messages, plan, classified, reason="unreachable", entity=entity, peer_title=title
     )
 
 
 async def resolve(
     messages,
-    plan: transport.TransportPlan,
+    plan: replies.TransportPlan,
     leg,
-    source,
     ctx: ResolveContext,
-    *,
-    posts_cursor: int | None = None,
-    posts_exhausted: bool = False,
-) -> transport.TransportPlan:
-    """Turn ``transport.decide``'s plan into a sendable reply or fallback."""
+) -> replies.TransportPlan:
+    """Turn ``replies.decide``'s plan into a sendable reply or fallback."""
     if plan.mode == "deferred":
         return plan
-    classified = replies.target(
-        messages, leg, source, posts_cursor=posts_cursor, posts_exhausted=posts_exhausted
-    )
+    classified = plan.classified
     if classified is None:
         return plan
-    if classified.kind == "deferred":
-        return transport.TransportPlan(
-            mode="deferred", reply_to=None, reply_flattened=False, needs_author=False
-        )
-    if classified.kind == "mapped-in-leg":
-        reply_to = replies.input_reply(classified, leg)
-        if reply_to is not None:
-            plan = replace(plan, reply_to=reply_to, reply_flattened=False)
-    elif classified.kind == "mapped-cross-leg":
+    if classified.kind == "mapped-cross-leg":
         reply_to = await _cross_leg_reply(classified, leg, ctx)
         if reply_to is not None:
-            plan = transport.as_reuploaded(replace(plan, reply_to=reply_to))
+            plan = replies.as_reuploaded(replace(plan, reply_to=reply_to))
     elif classified.kind == "foreign-peer":
         reachable, entity = await _probe_reachable(ctx, classified.peer)
         if reachable:
@@ -281,7 +267,7 @@ async def resolve(
             except ValueError:
                 reply_to = None
             if reply_to is not None:
-                plan = transport.as_reuploaded(replace(plan, reply_to=reply_to))
+                plan = replies.as_reuploaded(replace(plan, reply_to=reply_to))
             else:
                 plan = await _unreachable_fallback(messages, plan, classified, ctx, entity=entity)
         else:
@@ -290,16 +276,16 @@ async def resolve(
 
 
 def degrade_to_fallback(
-    messages, plan: transport.TransportPlan, leg, source, ctx: ResolveContext
-) -> transport.TransportPlan:
+    messages, plan: replies.TransportPlan, leg, ctx: ResolveContext
+) -> replies.TransportPlan:
     """A reachable foreign send that Telegram rejected → rendered fallback."""
-    classified = replies.target(messages, leg, source)
+    classified = plan.classified
     if classified is None or classified.kind != "foreign-peer":
         return plan
     key = attribution.peer_key(classified.peer)
     ctx.peer_reachable[key] = False
     entity = ctx.peer_entities.get(key)
-    return quote_fallback.fallback_plan(
+    return fallback_plan(
         messages,
         plan,
         classified,
@@ -324,17 +310,116 @@ def foreign_quote_reply(plan) -> bool:
     return isinstance(reply_to, types.InputReplyToMessage) and reply_to.reply_to_peer_id is not None
 
 
-async def send_with_degrade(send, messages, plan, leg, source, ctx):
+async def send_with_degrade(send, messages, plan, leg, ctx):
     """Retry once with fallback when a native foreign quote is rejected."""
     try:
         return await send(plan)
     except FOREIGN_SEND_ERRORS:
         if not foreign_quote_reply(plan):
             raise
-        degraded = degrade_to_fallback(messages, plan, leg, source, ctx)
+        degraded = degrade_to_fallback(messages, plan, leg, ctx)
         return await send(degraded)
     except telethon_errors.BadRequestError as error:
-        stripped = quote_fallback.drop_stale_quote(messages, plan, error)
+        stripped = drop_stale_quote(messages, plan, error)
         if stripped is None:
             raise
         return await send(stripped)
+
+
+FALLBACK_SOURCE_LABEL = "Переслано от:"
+
+
+def peer_label(peer, entity, title: str | None = None) -> str:
+    if entity is not None:
+        return attribution.display_name(entity)
+    if title:
+        return title
+    peer_id = attribution.peer_key(peer)[1]
+    return "id unknown" if peer_id is None else f"id {peer_id}"
+
+
+def fallback_prefix(title: str, quote_text: str | None) -> tuple[str, tuple]:
+    """Labelled peer line, the quote as a blockquote, then a blank line."""
+    quote = quote_text or ""
+    head = f"{FALLBACK_SOURCE_LABEL} {title}\n"
+    prefix = f"{head}{quote}\n\n"
+    entities: tuple = ()
+    if quote:
+        entities = (
+            types.MessageEntityBlockquote(
+                offset=attribution.utf16_len(head), length=attribution.utf16_len(quote)
+            ),
+        )
+    return (prefix, entities)
+
+
+def fallback_plan(
+    messages,
+    plan: replies.TransportPlan,
+    classified: replies.Classification,
+    *,
+    reason: str,
+    entity=None,
+    peer_title: str | None = None,
+    placement: int | None = None,
+) -> replies.TransportPlan:
+    """Rendered fallback body; ``placement`` is the destination thread anchor."""
+    title = peer_label(classified.peer, entity, peer_title)
+    prefix, prefix_entities = fallback_prefix(title, classified.quote_text)
+    quote_flattened = {
+        "id": messages[0].id,
+        "peer": attribution.peer_key(classified.peer)[1],
+        "reason": reason,
+    }
+    return replies.as_reuploaded(
+        replace(
+            plan,
+            reply_to=None
+            if placement is None
+            else types.InputReplyToMessage(reply_to_msg_id=placement),
+            body_prefix=prefix,
+            body_prefix_entities=prefix_entities,
+            quote_flattened=quote_flattened,
+        )
+    )
+
+
+def apply_body(message, author, plan) -> tuple[str, list | None]:
+    """Quote fallback prefix (if any), then author attribution — one UTF-16 path."""
+    text, entities = attribution.with_prefix(
+        getattr(message, "message", None) or "",
+        getattr(message, "entities", None),
+        plan.body_prefix or "",
+        plan.body_prefix_entities,
+    )
+    return attribution.prefixed(text, entities, author)
+
+
+def _stale_quote_peer(messages):
+    header = getattr(messages[0], "reply_to", None)
+    peer = getattr(header, "reply_to_peer_id", None) if header is not None else None
+    return None if peer is None else attribution.peer_key(peer)[1]
+
+
+def drop_stale_quote(messages, plan, error) -> replies.TransportPlan | None:
+    """Strip a quote Telegram refuses, keeping the reply link intact."""
+    if not str(getattr(error, "message", "") or "").startswith("QUOTE_"):
+        return None
+    reply_to = plan.reply_to
+    if not isinstance(reply_to, types.InputReplyToMessage):
+        return None
+    if reply_to.quote_text is None:
+        return None
+    stripped = cast(types.InputReplyToMessage, copy(reply_to))
+    stripped.quote_text = None
+    stripped.quote_entities = None
+    stripped.quote_offset = None
+    return replace(
+        plan,
+        reply_to=stripped,
+        quote_flattened={
+            "id": messages[0].id,
+            "peer": _stale_quote_peer(messages),
+            "reason": "quote-rejected",
+        },
+    )

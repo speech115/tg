@@ -7,11 +7,11 @@ import time
 
 from telethon import errors
 
-from . import engine, roster, snapshot
+from . import engine, roster, snapshot, state
 from .state import Store
 from .support import PolicyError, encode
 
-__all__ = ["Store", "run"]
+__all__ = ["Store", "clone", "run"]
 
 
 def parser():
@@ -78,19 +78,90 @@ def _finish_progress(store, account_id, status, error=None):
         clone.save()
 
 
-async def run(client, argv=None, *, state_root=None):
-    """Run an online operation; returns JSON-serializable data, prints nothing to stdout.
+def _validate_caps(limit, max_runtime):
+    if limit is not None and (type(limit) is not int or limit < 1):
+        raise PolicyError("limit must be a positive integer")
+    if max_runtime is not None and (
+        type(max_runtime) not in (int, float) or not 0 < max_runtime < float("inf")
+    ):
+        raise PolicyError("max-runtime must be finite and positive")
 
-    ``state_root`` is injectable for isolated tests. Normal use always selects ~/.local/state/tg.
+
+async def clone(
+    client,
+    source: str,
+    *,
+    commit: bool = False,
+    limit: int | None = None,
+    max_runtime: float | None = None,
+    replace: bool = False,
+    no_comments: bool = False,
+    capture_poll_votes: bool = False,
+    state_root=None,
+) -> dict:
+    """Preview, or initialize/resume a clone with the supplied authenticated client.
+
+    No Telegram peers are created without ``commit=True``. The default preview
+    does not copy messages. Limits count complete batches, including albums.
+    Existing argv workflows remain available through :func:`run`.
     """
+    _validate_caps(limit, max_runtime)
+    if not isinstance(source, str) or not source.strip():
+        raise PolicyError("source must be a nonempty Telegram peer reference")
+    if any(type(value) is not bool for value in (commit, replace, no_comments, capture_poll_votes)):
+        raise PolicyError("clone switches must be booleans; use commit=True to publish")
+
+    async def operation(store, me):
+        if not commit:
+            return await engine.preview_init(
+                client, store, me, source, replace=replace, no_comments=no_comments
+            )
+        entity, kind, title = await engine._resolve_source(
+            client, store, source, account_user_id=me.id
+        )
+        saved = store.load(state.clone_id(me.id, entity.id, kind))
+        reference = f"{state.PEER_CLASS[kind]}:{entity.id}"
+        if replace or saved is None or not saved.initialized:
+            await engine.commit_init(
+                client,
+                store,
+                me,
+                reference,
+                {
+                    "account_user_id": me.id,
+                    "source_peer_id": entity.id,
+                    "source_kind": kind,
+                    "source_title": title,
+                    "replace": replace,
+                    "no_comments": no_comments,
+                },
+            )
+        elif no_comments and saved.comments == "enabled":
+            raise PolicyError("no-comments cannot disable an existing discussion; use replace=True")
+        return await engine.sync_text(
+            client,
+            store,
+            me,
+            reference,
+            limit=limit,
+            max_runtime=max_runtime,
+            capture_poll_votes=capture_poll_votes,
+        )
+
+    return await _execute(client, operation, state_root)
+
+
+async def run(client, argv=None, *, state_root=None):
+    """Compatibility adapter for existing argv workflows; prints no stdout."""
     args = parser().parse_args(sys.argv[1:] if argv is None else argv)
     if args.operation == "init" and args.commit and (args.replace or args.no_comments):
         raise PolicyError("replace and no-comments options belong on the preview command")
     if args.operation == "sync":
-        if args.limit is not None and args.limit < 1:
-            raise PolicyError("limit must be positive")
-        if args.max_runtime is not None and (not 0 < args.max_runtime < float("inf")):
-            raise PolicyError("max-runtime must be finite and positive")
+        _validate_caps(args.limit, args.max_runtime)
+    return await _execute(client, lambda store, me: _dispatch(client, store, me, args), state_root)
+
+
+async def _execute(client, operation, state_root):
     me = await client.get_me()
     if me is None:
         raise PolicyError("Telegram client is not authorized")
@@ -101,7 +172,7 @@ async def run(client, argv=None, *, state_root=None):
             store.cooldown(me.id)
             try:
                 await snapshot.recover_votes(client, store, me.id)
-                result = await _dispatch(client, store, me, args)
+                result = await operation(store, me)
             except errors.FloodWaitError as error:
                 _finish_progress(store, me.id, "cooldown", str(error))
                 store.cooldown(me.id, error.seconds)

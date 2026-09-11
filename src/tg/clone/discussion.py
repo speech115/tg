@@ -1,9 +1,11 @@
 """Private discussion groups, linking, anchors and destination tail checks."""
 
+from typing import cast
+
 from telethon import errors as telethon_errors
 from telethon.tl import functions, types
 
-from . import topics
+from . import batching, topics
 from .support import PolicyError
 
 PEER_UNAVAILABLE = (
@@ -130,3 +132,77 @@ async def anchor_for(tg, destination_channel, destination_post_id: int, cache: d
         if post_id is not None and type(item.id) is int and 0 < item.id <= 2147483647:
             cache[post_id] = item.id
     return cache.setdefault(destination_post_id, None)
+
+
+def anchor_posts(messages, source_channel_id) -> dict[int, int] | None:
+    """Anchor id -> source post id for a batch of Telegram's own auto-forwards, or None when
+    the batch is real content. A channel album auto-forwards as an album, so an anchor
+    batch can carry several messages."""
+    found = {message.id: autoforward_post_id(message, source_channel_id) for message in messages}
+    if all(post_id is None for post_id in found.values()):
+        return None
+    if any(post_id is None for post_id in found.values()):
+        raise PolicyError("clone discussion anchor album is incomplete")
+    return cast(dict[int, int], found)
+
+
+ACCESS_ERRORS = (*PEER_UNAVAILABLE, telethon_errors.ChatAdminRequiredError)
+
+
+def _degrade(clone_state):
+    clone_state.event("comments-unavailable", {"cursor": clone_state.discussion_cursor})
+    clone_state.comments = "unavailable"
+    clone_state.save()
+
+
+async def _destination_group(tg, clone_state, resolve_ctx):
+    group = getattr(resolve_ctx, "destination_group", None)
+    if group is None:
+        try:
+            group = await tg.get_entity(
+                types.PeerChannel(clone_state.discussion_destination_peer_id)
+            )
+        except PEER_UNAVAILABLE:
+            raise PolicyError("clone discussion destination is unavailable") from None
+        if not is_discussion_destination(group):
+            raise PolicyError("clone discussion destination is not a private owned megagroup")
+        resolve_ctx.destination_group = group
+    return group
+
+
+async def comment_events(tg, clone, source_channel, destination, ctx):
+    """Yield discussion batches; preserve cursors if source access disappears.
+
+    Scheduling, limits and sending belong to Sync, not callbacks inside this reader.
+    A send error in the consumer must never be mistaken for lost read access.
+    """
+    source_group = ctx.source_group
+    if source_group is None:
+        try:
+            source_group = await tg.get_entity(types.PeerChannel(clone.discussion_source_peer_id))
+        except ACCESS_ERRORS:
+            _degrade(clone)
+            return
+    group = await _destination_group(tg, clone, ctx)
+    await verify_tail(
+        tg,
+        group,
+        clone.max_discussion_destination_id(),
+        "discussion destination",
+        lambda item: (
+            getattr(item, "action", None) is not None
+            or autoforward_post_id(item, destination.id) is not None
+        ),
+    )
+    ctx.source_group, ctx.source_channel_id, ctx.destination = (
+        source_group,
+        source_channel.id,
+        destination,
+    )
+    try:
+        async for event in batching.plan(
+            tg.iter_messages(source_group, min_id=clone.discussion_cursor, reverse=True)
+        ):
+            yield event
+    except ACCESS_ERRORS:
+        _degrade(clone)

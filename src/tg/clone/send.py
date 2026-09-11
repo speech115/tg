@@ -6,13 +6,10 @@ from copy import copy
 from telethon import errors, utils
 from telethon.tl import functions, types
 
-from . import attribution, fidelity, publish, quote_fallback, reforward, reupload, snapshot, topics
+from . import attribution, batching, publish, quotes, reforward, snapshot, topics
+from . import media as media_transfer
+from .media import media_identity
 from .support import PolicyError
-from .transfer import media_identity
-
-
-def _body(message, author, plan):
-    return quote_fallback.apply_body(message, author, plan)
 
 
 def _reference(media):
@@ -39,7 +36,7 @@ def _identity(source, destination, messages, plan, author, reply_to, mode, prove
         "messages": [
             {
                 "id": message.id,
-                "body": _body(message, author if i == 0 else None, plan),
+                "body": quotes.apply_body(message, author if i == 0 else None, plan),
                 "media": media_identity(message.media),
                 "kind": type(message.media).__name__,
                 "spoiler": getattr(message.media, "spoiler", None),
@@ -59,7 +56,7 @@ def _issues(messages, plan, mode):
             items.append({"kind": "reply-flattened"})
         if plan.quote_flattened:
             items.append({"kind": "quote-fallback", **plan.quote_flattened})
-        buttons = fidelity.dropped_buttons(message) if mode != "forwarded" else None
+        buttons = batching.dropped_buttons(message) if mode != "forwarded" else None
         if buttons:
             items.append({"kind": "buttons-dropped", "buttons": buttons})
         result[str(message.id)] = items
@@ -69,18 +66,18 @@ def _issues(messages, plan, mode):
 async def _media_request(
     tg, destination, clone, messages, reply_to, author, plan, progress, *, reuse
 ):
-    cache = reupload.cache_dir(clone)
+    cache = media_transfer.cache_dir(clone)
 
     async def input_media(message):
         if reuse:
             return _reference(message.media)
         cache.mkdir(parents=True, exist_ok=True, mode=448)
-        path = await reupload.download_for_reupload(tg, message, cache, progress)
-        return await reupload.uploaded_media(tg, message, path, progress)
+        path = await media_transfer.download_for_reupload(tg, message, cache, progress)
+        return await media_transfer.uploaded_media(tg, message, path, progress)
 
     if len(messages) == 1:
         message = messages[0]
-        text, entities = _body(message, author, plan)
+        text, entities = quotes.apply_body(message, author, plan)
         common = dict(
             peer=destination, message=text, entities=entities, random_id=0, reply_to=reply_to
         )
@@ -95,7 +92,7 @@ async def _media_request(
             media = _reference(stored)
             if hasattr(media, "spoiler"):
                 media.spoiler = getattr(message.media, "spoiler", None)
-        text, entities = _body(message, author if index == 0 else None, plan)
+        text, entities = quotes.apply_body(message, author if index == 0 else None, plan)
         album.append(
             types.InputSingleMedia(media=media, random_id=0, message=text, entities=entities)
         )
@@ -141,7 +138,7 @@ async def _refresh_media(tg, source, messages):
     refreshed = await tg.get_messages(source, ids=[message.id for message in messages])
     if len(refreshed) != len(messages) or any(
         (
-            fresh is None or reupload.media_key(old) != reupload.media_key(fresh)
+            fresh is None or media_transfer.media_key(old) != media_transfer.media_key(fresh)
             for old, fresh in zip(messages, refreshed, strict=True)
         )
     ):
@@ -240,5 +237,5 @@ async def forward_batch(
         mode = "reuploaded"
         await submit(request, mode)
     if mode == "reuploaded":
-        shutil.rmtree(reupload.cache_dir(clone_state), ignore_errors=True)
+        shutil.rmtree(media_transfer.cache_dir(clone_state), ignore_errors=True)
     return (len(source_ids), mode, plan.reply_flattened, plan.quote_flattened)

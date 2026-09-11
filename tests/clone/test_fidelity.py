@@ -6,7 +6,7 @@ import pytest
 from telethon import errors, utils
 from telethon.tl import functions, types
 
-from tg.clone import Store, legs, reforward, replies, snapshot, transport
+from tg.clone import Store, reforward, replies, snapshot
 from tg.clone.__main__ import status
 from tg.clone.support import PolicyError
 
@@ -74,7 +74,7 @@ def test_typed_peer_collision_does_not_remap_foreign_user(tmp_path):
                 reply_to_msg_id=2, reply_to_peer_id=types.PeerUser(11)
             ),
         )
-        assert replies.target([item], legs.posts(clone), source).kind == "foreign-peer"
+        assert replies.target([item], clone.leg(), source).kind == "foreign-peer"
 
 
 def test_reforward_requires_identical_formatting_and_spoiler(tmp_path):
@@ -104,8 +104,8 @@ def test_reforward_requires_identical_formatting_and_spoiler(tmp_path):
         clone = store.create(99, 10, "Source", "broadcast")
         clone.discussion_source_peer_id = 11
         clone.save()
-        plan = transport.decide([repost], legs.posts(clone), source)
-        assert reforward.eligible(legs.posts(clone), [repost], plan)
+        plan = replies.decide([repost], clone.leg(), source)
+        assert reforward.eligible(clone.leg(), [repost], plan)
         found = asyncio.run(reforward.locate(tg, clone, repost, {}))
         assert found == (group, 7)
         original.entities = [types.MessageEntityItalic(0, 4)]
@@ -240,8 +240,8 @@ def test_poll_capture_excludes_non_retractable_polls():
 
 
 def test_avatar_thumbnail_and_media_shapes_are_preserved(tmp_path):
-    from tg.clone import reupload
-    from tg.clone.transfer import _photo_with_largest_size_last
+    from tg.clone import media
+    from tg.clone.media import _photo_with_largest_size_last
 
     source = channel(broadcast=True)
     source.photo = NS(photo_id=777)
@@ -280,7 +280,7 @@ def test_avatar_thumbnail_and_media_shapes_are_preserved(tmp_path):
     ]
     path = tmp_path / "media.bin"
     path.write_bytes(b"data")
-    uploaded = asyncio.run(reupload.uploaded_media(tg, item, path))
+    uploaded = asyncio.run(media.uploaded_media(tg, item, path))
     assert uploaded.thumb.id == 500 and uploaded.attributes[0].voice
     photo = types.Photo(
         9,

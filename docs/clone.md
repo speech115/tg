@@ -5,7 +5,51 @@ already authenticated Telethon client. A forum gets a private forum destination;
 other source types get a private broadcast channel. Linked channel discussions get
 a separate private group.
 
-## Run from this checkout
+## Direct Python API
+
+`tg` supplies authentication; `tg.clone` supplies the durable copying workflow.
+Neither the workflow nor an agent should open a second Telegram client.
+
+```python
+from tg.clone import clone
+
+preview = await clone(client, "channel:123456789")
+```
+
+A preview creates no Telegram destinations or copied messages. After checking the
+source, the explicit write call both initializes and copies, or resumes saved work:
+
+```python
+result = await clone(
+    client,
+    "channel:123456789",
+    commit=True,
+    limit=50,  # complete batches; an album stays whole
+    max_runtime=600,  # seconds; finish the current batch
+)
+print(result)
+```
+
+Save that code as `clone.py` and run `tg clone.py`, or pass it through `tg` stdin.
+No repository checkout is required for the installed package. Repeat the call with
+the same source to continue; an initialized clone does not repeat title/profile,
+folder or notification setup. An interrupted initialization is completed first.
+
+`replace=True` deliberately archives local state and creates a **new** clone. Use
+it only for that explicit one-time action, not on every resume. `no_comments=True`
+selects posts-only initialization; it cannot disable an already linked discussion.
+`capture_poll_votes=True` remains an explicit opt-in for temporary votes. All these
+switches require actual booleans. `state_root` exists for isolated tests; normal
+calls use the standard state directory.
+
+This API uses the caller's `commit=True` as publication consent; it does not consume
+a previously issued preview token. A workflow that needs a five-minute, single-use,
+account-bound approval must retain the `run` preview/commit interface below.
+Every online entry also completes a previously authorized pending vote retraction
+before other work, including when the requested operation is a preview.
+
+## Compatibility: run from this checkout
+
 
 ```bash
 .venv/bin/tg workflows/clone.py init channel:123456789
@@ -34,7 +78,7 @@ stopped the run. This is a one-shot workflow; it does not start background jobs.
 
 ## Installed package
 
-The implementation ships in the `tg-harness` wheel as `tg.clone`. Save this script as
+The implementation ships in the `tg-harness` wheel as `tg.clone`. For compatibility, save this script as
 `clone.py` and run it with `tg clone.py init|sync|refresh|roster SOURCE [options]`:
 
 ```python
@@ -134,9 +178,32 @@ A Telegram FloodWait is saved for the account and ends the operation. Subsequent
 runs refuse early until the deadline. The supplied client's sleep threshold is
 restored afterward. Clone state from the old CLI is not imported or migrated.
 
+## Implementation boundaries
+
+The runtime in `tg.cli`, `tg.config` and `tg.session` is unchanged. The direct Python
+entry and the compatibility argument parser share one operation boundary: account
+lock, Store, cooldown, pending-vote recovery and progress cleanup.
+
+The copy path is `engine` → `replies` / `quotes` → `send` → `publish` / `state`.
+Replies are classified once per batch and the result travels in the transport plan;
+comment batches reuse that same plan. `discussion` yields read events instead of
+owning a second callback-based copy loop. `media` owns download/upload checkpoints
+and native media attributes. `CloneState.leg()` exposes the posts or discussion map.
+
+Related private helpers were consolidated: `transport` into `replies`,
+`quote_fallback` into `quotes`, `fidelity` into `batching`, and `transfer` / `reupload`
+into `media`. These private import paths are not compatibility APIs. The supported
+`clone`, `run`, `Store`, checkout wrapper, offline commands and their recovery
+behavior remain available.
+
+Saved workflow state from the earlier `codex/clone-workflow` implementation is still
+readable. The new `initialized` metadata flag defaults to false for older records;
+the next direct write call safely completes initialization once without discarding
+maps. This is not an importer for the different `tgcli` state format.
+
 ## Verification
 
-The local tests use real Telethon request/message types and an in-memory Telegram
+The tests use real Telethon request/message types and an in-memory Telegram
 service. They cover source types, initialization, albums, comments, topics, media,
 quotes, snapshots, previews, rate limits, interrupted transfers and crash recovery.
 
@@ -146,14 +213,15 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-A private live smoke test verified 78 channel messages, seven albums and five
+The earlier migration documented a private live smoke test that verified 78 channel messages, seven albums and five
 comments, including text/entities, media identities, audio/video attributes and
 discussion placement. Initialization recovered from a creation FloodWait. A stop
 after an album receipt but before its mapping commit resumed without duplicate
 messages. Comments were sampled separately because the source clone stored hundreds
 of automatic forwards before its first comment.
 
-The live test covers forwarding and media-reference reuse. Protected reuploads,
+The refactor was verified with the local fake service and packaging checks; it did
+not run a new live Telegram test. The earlier live test covers forwarding and media-reference reuse. Protected reuploads,
 forums and poll snapshots remain covered by local tests, not this live sample.
 
 Adapted from the MIT-licensed

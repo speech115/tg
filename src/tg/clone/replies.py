@@ -1,10 +1,12 @@
-"""Classify replies by typed peer identity and available mappings."""
+"""Classify replies once and choose their transport."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
 
 from telethon.tl import types
 
-from . import attribution
+from . import attribution, batching, topics
 from .support import PolicyError
 
 _FLATTEN_FIELDS = ("todo_item_id", "poll_option")
@@ -180,4 +182,75 @@ def input_reply(classified: Classification, leg) -> types.InputReplyToMessage | 
         quote_text=classified.quote_text,
         quote_entities=list(classified.quote_entities) or None,
         quote_offset=classified.quote_offset,
+    )
+
+
+@dataclass(frozen=True)
+class TransportPlan:
+    mode: str
+    reply_to: object | None
+    reply_flattened: bool
+    needs_author: bool
+    body_prefix: str | None = None
+    body_prefix_entities: tuple = ()
+    quote_flattened: dict | None = None
+    classified: Classification | None = None
+
+
+def as_reuploaded(plan: TransportPlan) -> TransportPlan:
+    """Make a plan upload-capable while preserving snapshot transport."""
+    return replace(
+        plan,
+        mode="snapshots" if plan.mode == "snapshots" else "reuploaded",
+        needs_author=True,
+        reply_flattened=False,
+    )
+
+
+def decide(
+    messages, leg, source, *, posts_cursor: int | None = None, posts_exhausted: bool = False
+) -> TransportPlan:
+    classified = target(
+        messages, leg, source, posts_cursor=posts_cursor, posts_exhausted=posts_exhausted
+    )
+    header = getattr(messages[0], "reply_to", None)
+    if classified is None:
+        reply_to = None
+        reply_flattened = False
+    elif classified.kind == "deferred":
+        return TransportPlan(
+            mode="deferred",
+            reply_to=None,
+            reply_flattened=False,
+            needs_author=False,
+            classified=classified,
+        )
+    elif classified.kind == "mapped-in-leg":
+        reply_to = input_reply(classified, leg)
+        reply_flattened = False
+    elif classified.kind == "flatten":
+        reply_to = None
+        reply_flattened = not (leg.destination_kind == "forum" and topics.placement_only(header))
+    else:
+        reply_to = None
+        reply_flattened = True
+    if len(messages) == 1 and batching.supports(messages[0]):
+        mode = "snapshots"
+    elif (
+        getattr(source, "noforwards", False)
+        or reply_to is not None
+        or any(getattr(message, "noforwards", False) for message in messages)
+    ):
+        mode = "reuploaded"
+    else:
+        mode = "forwarded"
+    needs_author = mode != "forwarded" and (
+        leg.source_kind != "broadcast" or getattr(messages[0], "fwd_from", None) is not None
+    )
+    return TransportPlan(
+        mode=mode,
+        reply_to=reply_to,
+        reply_flattened=reply_flattened,
+        needs_author=needs_author,
+        classified=classified,
     )

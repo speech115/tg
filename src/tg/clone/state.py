@@ -101,6 +101,28 @@ class SqlMap(Mapping):
 
 
 @dataclass
+class Leg:
+    """A posts or discussion view; all writes still belong to CloneState."""
+
+    clone_state: "CloneState"
+    source_kind: str
+    destination_kind: str
+    cursor_field: str
+    map_field: str
+
+    def dest_for(self, source_id: int) -> int | None:
+        return getattr(self.clone_state, self.map_field).get(str(source_id))
+
+    @property
+    def cursor(self) -> int:
+        return getattr(self.clone_state, self.cursor_field)
+
+    @cursor.setter
+    def cursor(self, value: int) -> None:
+        setattr(self.clone_state, self.cursor_field, value)
+
+
+@dataclass
 class CloneState:
     store: "Store"
     account_user_id: int
@@ -112,6 +134,7 @@ class CloneState:
     destination_title: str | None = None
     destination_username: str | None = None
     creation_marker: str | None = None
+    initialized: bool = False
     cursor: int = 0
     created_at: str = ""
     last_synced_at: str | None = None
@@ -159,6 +182,11 @@ class CloneState:
         )
         if not changed.rowcount:
             raise PolicyError("source message already maps to another destination")
+
+    def leg(self, *, discussion=False) -> Leg:
+        if discussion:
+            return Leg(self, "megagroup", "megagroup", "discussion_cursor", "discussion_id_map")
+        return Leg(self, self.source_kind, self.destination_kind, "cursor", "id_map")
 
     def record_mapping(self, source_id, destination_id):
         self.record("id_map", source_id, destination_id)
@@ -255,6 +283,7 @@ class CloneState:
         if (
             self.source_kind not in PEER_CLASS
             or not isinstance(self.source_title, str)
+            or type(self.initialized) is not bool
             or type(self.discussion_linked) is not bool
             or type(self.pin_occupied) is not bool
         ):
