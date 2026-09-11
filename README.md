@@ -222,6 +222,38 @@ locking     one process per named session
 
 Workflow logic stays in ordinary Python scripts.
 
+## Clone histories
+
+The bundled `tg.clone` workflow copies channels, groups, forums, dialogs and bot
+histories, including albums, replies and linked discussions. It keeps its own
+resumable state while using the client supplied by `tg`.
+
+```bash
+tg <<'PYTHON'
+from tg.clone import clone
+
+# Preview: no destinations or copied messages are created.
+print(await clone(client, "channel:123456789"))
+PYTHON
+```
+
+After reviewing the source, run ordinary Python with explicit publication consent:
+
+```python
+from tg.clone import clone
+
+result = await clone(client, "channel:123456789", commit=True, limit=50)
+```
+
+The same call initializes a new clone or resumes an existing one. Limits count
+complete batches, not individual album members. The supplied `client` and outer
+`tg --account ...` invocation remain responsible for authentication and sessions.
+There is no new built-in command, connection, daemon or agent framework.
+
+The earlier `run(client, argv)` interface, `workflows/clone.py`, and offline
+`python -m tg.clone status|export` commands remain available. See
+[the clone workflow guide](docs/clone.md) for recovery, compatibility and limits.
+
 ## Agent skill
 
 The repository ships `src/tg/SKILL.md`.
