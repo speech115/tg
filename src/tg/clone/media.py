@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from telethon import errors, helpers, utils
-from telethon import errors as telethon_errors
 from telethon.tl import functions, types
 
 from . import progress as clone_progress
@@ -214,7 +213,7 @@ async def uploaded_thumb(tg, message, document, path: Path):
         if downloaded is None:
             return None
         return await tg.upload_file(downloaded)
-    except telethon_errors.FloodWaitError:
+    except errors.FloodWaitError:
         raise
     except Exception as exc:
         note(f"warning: clone thumb skipped for source message {message.id}: {exc}")
