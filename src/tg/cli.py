@@ -2,6 +2,7 @@ import argparse
 import ast
 import asyncio
 import inspect
+import math
 import sys
 from importlib.resources import files
 from pathlib import Path
@@ -13,7 +14,7 @@ from telethon.tl import functions
 
 from . import TgError
 from .config import config_permissions_warning, load_config, resolve_config_path
-from .session import client_for
+from .session import DEFAULT_LOCK_TIMEOUT, client_for
 
 _COMMANDS = frozenset({"login", "doctor", "skill"})
 
@@ -29,14 +30,21 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--account", metavar="NAME")
+    parser.add_argument(
+        "--lock-timeout",
+        type=float,
+        default=DEFAULT_LOCK_TIMEOUT,
+        metavar="SECONDS",
+        help="wait for a busy session (default: 120 seconds; 0: fail immediately)",
+    )
     parser.add_argument("target", nargs="?", metavar="COMMAND|SCRIPT")
     parser.add_argument("target_args", nargs=argparse.REMAINDER, metavar="ARGS")
     return parser
 
 
-async def login(account: str | None) -> None:
+async def login(account: str | None, *, lock_timeout: float = DEFAULT_LOCK_TIMEOUT) -> None:
     config = load_config(account=account)
-    async with client_for(config, require_auth=False) as client:
+    async with client_for(config, require_auth=False, lock_timeout=lock_timeout) as client:
         await client.start()
     print(f"logged in: {config.session.name}", file=sys.stderr)
 
@@ -45,13 +53,15 @@ async def run_script(
     account: str | None,
     script: str,
     script_args: list[str],
+    *,
+    lock_timeout: float = DEFAULT_LOCK_TIMEOUT,
 ) -> None:
     filename, source = read_source(script)
     if not source.strip():
         raise TgError("script is empty")
     code = compile(source, filename, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     config = load_config(account=account)
-    async with client_for(config) as client:
+    async with client_for(config, lock_timeout=lock_timeout) as client:
         await execute(
             code,
             {
@@ -64,7 +74,7 @@ async def run_script(
         )
 
 
-async def doctor(account: str | None) -> None:
+async def doctor(account: str | None, *, lock_timeout: float = DEFAULT_LOCK_TIMEOUT) -> None:
     config_path = resolve_config_path()
     config = load_config(account=account)
     if warning := config_permissions_warning(config_path):
@@ -76,7 +86,7 @@ async def doctor(account: str | None) -> None:
     print(f"session={session_status} path={session_file}")
     if session_status == "missing":
         raise TgError(f"session is missing: {session_file}; run `tg login`")
-    async with client_for(config) as client:
+    async with client_for(config, lock_timeout=lock_timeout) as client:
         me = await client.get_me()
     username = f"@{me.username}" if me.username else "-"
     print("telegram=connected")
@@ -95,6 +105,8 @@ def skill() -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if not math.isfinite(args.lock_timeout) or args.lock_timeout < 0:
+        parser.error("--lock-timeout must be a finite non-negative number")
     target = args.target
     if target is None and sys.stdin.isatty():
         parser.print_help()
@@ -104,13 +116,17 @@ def main(argv: list[str] | None = None) -> int:
             if args.target_args:
                 raise TgError(f"tg {target} does not accept arguments")
             if target == "login":
-                asyncio.run(login(args.account))
+                asyncio.run(login(args.account, lock_timeout=args.lock_timeout))
             elif target == "doctor":
-                asyncio.run(doctor(args.account))
+                asyncio.run(doctor(args.account, lock_timeout=args.lock_timeout))
             else:
                 skill()
         else:
-            asyncio.run(run_script(args.account, target or "-", args.target_args))
+            asyncio.run(
+                run_script(
+                    args.account, target or "-", args.target_args, lock_timeout=args.lock_timeout
+                )
+            )
     except TgError as exc:
         print(f"tg: {exc}", file=sys.stderr)
         return 2

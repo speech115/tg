@@ -14,7 +14,10 @@ from tg.config import Config
 def test_main_defaults_to_stdin(monkeypatch) -> None:
     received: dict[str, object] = {}
 
-    async def run_script(account: str | None, script: str, script_args: list[str]) -> None:
+    async def run_script(
+        account: str | None, script: str, script_args: list[str], *, lock_timeout: float
+    ) -> None:
+        assert lock_timeout == 120
         received.update(account=account, script=script, script_args=script_args)
 
     monkeypatch.setattr(cli, "run_script", run_script)
@@ -64,7 +67,10 @@ def test_syntax_error_is_rejected_before_config(monkeypatch) -> None:
 def test_main_passes_account_and_script_args(monkeypatch) -> None:
     received: dict[str, object] = {}
 
-    async def run_script(account: str | None, script: str, script_args: list[str]) -> None:
+    async def run_script(
+        account: str | None, script: str, script_args: list[str], *, lock_timeout: float
+    ) -> None:
+        assert lock_timeout == 120
         received.update(account=account, script=script, script_args=script_args)
 
     monkeypatch.setattr(cli, "run_script", run_script)
@@ -161,3 +167,66 @@ def test_doctor_reports_authenticated_account_and_config_warning(
         f"warning=config is accessible by group/other users (mode 0644); "
         f"run `chmod 600 {config_path}`\n"
     )
+
+
+def test_parser_defaults_to_bounded_lock_wait() -> None:
+    assert cli.build_parser().parse_args(["script.py"]).lock_timeout == 120
+
+
+@pytest.mark.parametrize("value", ["-1", "nan", "inf", "-inf", "1e999"])
+def test_invalid_lock_timeout_fails_before_config(monkeypatch, capsys, value) -> None:
+    monkeypatch.setattr(cli, "load_config", lambda **_kw: pytest.fail("loaded config"))
+    with pytest.raises(SystemExit) as exc:
+        cli.main([f"--lock-timeout={value}", "doctor"])
+    assert exc.value.code == 2
+    assert "finite non-negative" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("target", ["login", "doctor", "script.py", "-"])
+def test_main_forwards_lock_timeout(monkeypatch, target) -> None:
+    received = []
+
+    async def run(*args, **kwargs):
+        received.append((args, kwargs))
+
+    for name in ("login", "doctor", "run_script"):
+        monkeypatch.setattr(cli, name, run)
+    assert cli.main(["--account", "main_media", "--lock-timeout", "0.25", target]) == 0
+    assert received[0][0][0] == "main_media"
+    assert received[0][1] == {"lock_timeout": 0.25}
+
+
+@pytest.mark.parametrize("target", ["login", "doctor", "script"])
+def test_commands_pass_timeout_to_client(monkeypatch, tmp_path: Path, target) -> None:
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
+    config = Config(123, "hash", tmp_path / "main_media")
+    config.session.with_suffix(".session").touch()
+    monkeypatch.setattr(cli, "load_config", lambda **_kw: config)
+    monkeypatch.setattr(cli, "config_permissions_warning", lambda _path: None)
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("pass\n"))
+    received = []
+
+    class FakeClient:
+        async def start(self):
+            pass
+
+        async def get_me(self):
+            return SimpleNamespace(id=7, username=None)
+
+    @asynccontextmanager
+    async def client_for(selected, **kwargs):
+        assert selected is config
+        received.append(kwargs)
+        yield FakeClient()
+
+    monkeypatch.setattr(cli, "client_for", client_for)
+    if target == "script":
+        asyncio.run(cli.run_script("main_media", "-", [], lock_timeout=0.25))
+    else:
+        asyncio.run(getattr(cli, target)("main_media", lock_timeout=0.25))
+    expected = {"lock_timeout": 0.25}
+    if target == "login":
+        expected["require_auth"] = False
+    assert received == [expected]
