@@ -20,7 +20,7 @@ const Particles = {
       uniforms: { map: { value: GLOW_TEX }, proj: { value: 400 } },
       vertexShader: `attribute float size; attribute float alpha; attribute vec3 color; varying vec3 vC; varying float vA; uniform float proj;
         void main(){ vC = color; vA = alpha; vec4 mv = modelViewMatrix * vec4(position,1.0);
-          gl_PointSize = clamp(size * proj / max(0.1,-mv.z), 0.0, 256.0); gl_Position = projectionMatrix * mv; }`,
+          gl_PointSize = clamp(size * proj / max(0.1,-mv.z), 0.0, 90.0); gl_Position = projectionMatrix * mv; }`,
       fragmentShader: `uniform sampler2D map; varying vec3 vC; varying float vA;
         void main(){ vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(vC * t.rgb, t.a * vA); }`,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -75,18 +75,18 @@ const Particles = {
 
 // ------------------------------------------------------------ items
 const ITEMS = {
-  nitro: { name: 'НИТРО', color: '#ffb000' },
-  nitro3: { name: 'НИТРО ×3', color: '#ffb000' },
-  slime: { name: 'ПЛАЗМА-СЛИЗЬ', color: '#7dff5a' },
-  rocket: { name: 'РАКЕТА МАСКА', color: '#e9ecf5' },
-  gbomb: { name: 'ГРАВИ-БОМБА', color: '#58b4ff' },
-  shield: { name: 'ЩИТ ФЕЙБЛ+АСТРА', color: '#61e8ff' },
+  nitro: { name: 'NITRO', color: '#ffb000' },
+  nitro3: { name: 'NITRO ×3', color: '#ffb000' },
+  slime: { name: 'PLASMA SLIME', color: '#7dff5a' },
+  rocket: { name: 'MUSK ROCKET', color: '#e9ecf5' },
+  gbomb: { name: 'GRAVITY BOMB', color: '#58b4ff' },
+  shield: { name: 'FABLE+ASTRA SHIELD', color: '#61e8ff' },
   kill: { name: 'KILL SWITCH', color: '#ff2a3d' },
 };
 const WEAPONS = {
-  laser: { name: 'ЛАЗЕР', ammo: 36, rate: 0.1, color: 0xff3b3b },
-  rail: { name: 'РЕЙЛГАН', ammo: 6, rate: 0.55, color: 0x61e8ff },
-  swarm: { name: 'РОЙ РАКЕТ', ammo: 10, rate: 0.28, color: 0xffb000 },
+  laser: { name: 'LASER', ammo: 36, rate: 0.1, color: 0xff3b3b },
+  rail: { name: 'RAILGUN', ammo: 6, rate: 0.55, color: 0x61e8ff },
+  swarm: { name: 'ROCKET SWARM', ammo: 10, rate: 0.28, color: 0xffb000 },
 };
 function rollItem(rank, total, isHuman) {
   const r = rank / Math.max(1, total - 1); // 0 = leader, 1 = last
@@ -107,74 +107,49 @@ function rollItem(rank, total, isHuman) {
 const CarMeshes = {
   kart(color, name) {
     const g = new THREE.Group();
-    const body = new THREE.MeshLambertMaterial({ color, emissive: new THREE.Color(color).multiplyScalar(0.18) });
-    const dark = mat(0x1a1d26), white = mat(0xe8ecf4);
-    const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o; };
-    add(new THREE.BoxGeometry(2.3, 0.55, 3.6), body, 0, 0.6, 0);
-    const nose = add(new THREE.BoxGeometry(1.6, 0.4, 1.5), body, 0, 0.55, 2.3); nose.rotation.x = 0.12;
-    add(new THREE.BoxGeometry(0.55, 0.55, 2.2), dark, -1.35, 0.55, -0.1);
-    add(new THREE.BoxGeometry(0.55, 0.55, 2.2), dark, 1.35, 0.55, -0.1);
-    add(new THREE.BoxGeometry(2.8, 0.12, 0.7), body, 0, 1.55, -1.75);
-    add(new THREE.BoxGeometry(0.12, 0.8, 0.3), dark, -0.9, 1.15, -1.75);
-    add(new THREE.BoxGeometry(0.12, 0.8, 0.3), dark, 0.9, 1.15, -1.75);
-    const wheels = [];
-    const wg = new THREE.CylinderGeometry(0.52, 0.52, 0.45, 12); wg.rotateZ(Math.PI / 2);
-    for (const [x, z] of [[-1.3, 1.3], [1.3, 1.3], [-1.35, -1.25], [1.35, -1.25]]) wheels.push(add(wg, dark, x, 0.52, z));
-    const hub = glowMat(0x35e0ff, 0.9);
-    for (const w of wheels) { const h = new THREE.Mesh(new THREE.CircleGeometry(0.28, 10), hub); h.position.x = Math.sign(w.position.x) * 0.24; h.rotation.y = Math.sign(w.position.x) * Math.PI / 2; w.add(h); }
-    add(new THREE.BoxGeometry(0.85, 0.7, 0.6), white, 0, 1.15, -0.35);
-    const helmet = add(new THREE.SphereGeometry(0.46, 14, 10), body, 0, 1.82, -0.3);
-    const visor = add(new THREE.BoxGeometry(0.62, 0.22, 0.12), glowMat(0x9fe8ff, 0.85), 0, 1.84, 0.1);
-    visor.renderOrder = 2;
-    const bci = glowSprite(0xff4fd8, 1.6, 0); bci.position.set(0, 2.35, -0.35); g.add(bci);
-    const ex1 = glowSprite(0xffa040, 1.2); ex1.position.set(-0.5, 0.6, -2.0); g.add(ex1);
-    const ex2 = glowSprite(0xffa040, 1.2); ex2.position.set(0.5, 0.6, -2.0); g.add(ex2);
-    const under = glowSprite(color, 6, 0.5); under.position.y = 0.1; g.add(under);
-    // weapon turret (shown when McAfee's weapon is mounted)
-    const turret = new THREE.Group(); turret.position.set(0, 1.0, 1.1);
-    const tb = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 0.4, 10), mat(0x3a3f4c)); turret.add(tb);
-    const barrelL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1.9), mat(0x2a2e38)); barrelL.position.set(-0.22, 0.2, 0.9); turret.add(barrelL);
-    const barrelR = barrelL.clone(); barrelR.position.x = 0.22; turret.add(barrelR);
-    const tip = glowSprite(0xff3b3b, 1.4); tip.position.set(0, 0.2, 1.95); turret.add(tip);
-    turret.visible = false; g.add(turret);
+    const col = new THREE.Color(color);
+    const model = recolor(asset('kart', 'Kart'), {
+      Paint: (m) => { m.color.copy(col); m.emissive = new THREE.Color(0, 0, 0); },
+      Neon: { color: color, emissive: color, k: 5 },
+    });
+    g.add(model);
+    const body = findMat(model, 'Paint');
+    const wheels = ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'].map((n) => model.getObjectByName(n)).filter(Boolean);
+    const turret = model.getObjectByName('Turret') || new THREE.Group();
+    turret.visible = false;
+    const tip = glowSprite(0xff3b3b, 1.2, 1, 2.5); tip.position.set(0, 0.12, 1.65); turret.add(tip);
+    const bci = glowSprite(0xff4fd8, 1.6, 0, 2.5); bci.position.set(0, 1.9, -0.75); g.add(bci);
+    const ex1 = glowSprite(0xffa040, 1.2, 1, 2.5); ex1.position.set(-0.32, 0.82, -2.4); g.add(ex1);
+    const ex2 = glowSprite(0xffa040, 1.2, 1, 2.5); ex2.position.set(0.32, 0.82, -2.4); g.add(ex2);
     // guardian orbs: Fable (gold) and Astra (cyan)
-    const fable = glowSprite(0xffb347, 1.5); const astra = glowSprite(0x61e8ff, 1.5);
-    const fableCore = glowSprite(0xffffff, 0.5); fable.add(fableCore);
-    const astraCore = glowSprite(0xffffff, 0.5); astra.add(astraCore);
+    const fable = glowSprite(0xffb347, 1.5, 1, 2.5); const astra = glowSprite(0x61e8ff, 1.5, 1, 2.5);
+    fable.add(glowSprite(0xffffff, 0.5, 1, 3)); astra.add(glowSprite(0xffffff, 0.5, 1, 3));
     g.add(fable); g.add(astra);
-    const shield = new THREE.Mesh(new THREE.SphereGeometry(3.1, 20, 12), new THREE.MeshBasicMaterial({ color: 0x61e8ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true }));
+    const shield = new THREE.Mesh(new THREE.IcosahedronGeometry(3.1, 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x61e8ff).multiplyScalar(2), transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true }));
     shield.position.y = 1; shield.visible = false; g.add(shield);
-    const label = labelSprite(name, { color: '#' + new THREE.Color(color).getHexString(), screen: 0.04 });
+    const label = labelSprite(name, { color: '#' + col.getHexString(), screen: 0.04 });
     label.position.y = 3.6; g.add(label);
     return { g, wheels, ex: [ex1, ex2], bci, turret, tip, orbs: [fable, astra], shield, label, body };
   },
   saucer(color, name, species) {
     const g = new THREE.Group();
-    const hull = new THREE.MeshLambertMaterial({ color: 0x9aa0b0, emissive: new THREE.Color(color).multiplyScalar(0.12) });
-    const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o; };
-    const disc = add(new THREE.SphereGeometry(2.2, 22, 10), hull, 0, 1.1, 0); disc.scale.set(1, 0.3, 1.15);
-    const rim = add(new THREE.TorusGeometry(2.2, 0.16, 6, 32), glowMat(color, 0.95), 0, 1.1, 0); rim.rotation.x = Math.PI / 2; rim.scale.set(1, 1.15, 1);
-    const dome = add(new THREE.SphereGeometry(0.95, 16, 10, 0, TAU, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xa0e0ff, transparent: true, opacity: 0.4 }), 0, 1.45, -0.1);
-    dome.renderOrder = 2;
-    if (species === 'zeta') {
-      const head = add(new THREE.SphereGeometry(0.45, 14, 10), mat(0xa9b7a0), 0, 1.85, -0.1); head.scale.set(1, 1.25, 0.95);
-      for (const x of [-0.18, 0.18]) { const e = add(new THREE.SphereGeometry(0.15, 8, 6), mat(0x050505), x, 1.9, 0.27); e.scale.set(1, 1.6, 0.6); e.rotation.z = x > 0 ? -0.4 : 0.4; }
-    } else {
-      const head = add(new THREE.BoxGeometry(0.62, 0.6, 0.6), mat(0x4f8a3a), 0, 1.85, -0.15);
-      add(new THREE.BoxGeometry(0.42, 0.3, 0.5), mat(0x4f8a3a), 0, 1.72, 0.3);
-      for (const x of [-0.2, 0.2]) add(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe000 }), x, 1.95, 0.16);
-      head.rotation.x = -0.1;
-    }
+    const model = recolor(asset('saucers', species === 'zeta' ? 'SaucerZeta' : 'SaucerNibiru'), {
+      Neon: { color, emissive: color, k: 5 },
+      Engine: { color, emissive: color, k: 6 },
+    });
+    model.traverse((m) => { if (m.isMesh && m.material.name.startsWith('Glass')) { m.material = m.material.clone(); m.material.transparent = true; m.material.opacity = 0.35; m.material.depthWrite = false; m.castShadow = false; m.renderOrder = 2; } });
+    g.add(model);
+    const body = findMat(model, 'Hull');
     const lights = [];
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * TAU;
-      const l = glowSprite(color, 0.9); l.position.set(Math.cos(a) * 2.3, 1.0, Math.sin(a) * 2.6); g.add(l); lights.push(l);
+      const l = glowSprite(color, 0.9, 1, 2.5); l.position.set(Math.cos(a) * 2.45, 1.12, Math.sin(a) * 2.45); g.add(l); lights.push(l);
     }
-    const under = glowSprite(color, 7, 0.8); under.position.y = 0.4; g.add(under);
-    const beam = add(new THREE.CylinderGeometry(0.6, 1.6, 1.0, 12, 1, true), glowMat(color, 0.25), 0, 0.5, 0);
+    const under = glowSprite(color, 5, 0.16, 1.2); under.position.y = 0.4; g.add(under);
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.6, 1.0, 16, 1, true), glowMat(color, 0.1, 1.5)); beam.position.y = 0.3; g.add(beam);
     const label = labelSprite(name, { color: '#' + new THREE.Color(color).getHexString(), screen: 0.034 });
     label.position.y = 3.4; g.add(label);
-    return { g, lights, ex: [], under, label, beam, body: hull, wheels: [] };
+    return { g, lights, ex: [], under, label, beam, body, wheels: [] };
   },
 };
 
@@ -331,9 +306,9 @@ class Car {
     if (this.finished) { this.finishFade = (this.finishFade ?? 1) - dt; g.scale.setScalar(Math.max(0.01, this.finishFade)); }
     else g.scale.setScalar(1);
     const sp = Math.abs(this.v);
-    for (const w of this.m.wheels) w.rotation.x += this.v * dt * 1.8;
+    for (const w of this.m.wheels) w.rotation.x += this.v * dt * 1.9;
     for (const e of this.m.ex) {
-      const k = this.boostT > 0 || this.neuroT > 0 ? 3.2 : 0.8 + sp / 60;
+      const k = this.boostT > 0 || this.neuroT > 0 ? 2.4 : 0.45 + sp / 110;
       e.scale.set(k, k, 1);
       e.material.color.setHex(this.neuroT > 0 ? 0xff4fd8 : this.boostT > 0 ? 0x60c8ff : 0xffa040);
     }
@@ -349,7 +324,7 @@ class Car {
       fa.position.set(Math.cos(a) * 2.6, 2.4 + Math.sin(a * 2) * 0.3, Math.sin(a) * 2.6);
       as.position.set(Math.cos(a + Math.PI) * 2.6, 2.4 + Math.sin(a * 2 + 1) * 0.3, Math.sin(a + Math.PI) * 2.6);
       const hacked = this.hack || this.aiHackT > 0;
-      this.m.body.emissive.setHex(hacked && Math.floor(time * 12) % 2 ? 0x880010 : new THREE.Color(this.color).multiplyScalar(0.18).getHex());
+      if (this.m.body) this.m.body.emissive.setHex(hacked && Math.floor(time * 12) % 2 ? 0xaa0018 : 0x000000);
     } else {
       this.m.lights.forEach((l, i) => { l.material.opacity = 0.4 + 0.6 * ((Math.floor(time * 8) + i) % 4 === 0 ? 1 : 0.2); });
     }
@@ -363,7 +338,7 @@ class Car {
     }
     if ((this.boostT > 0 || this.neuroT > 0) && Math.random() < 0.8) {
       const p = this.pos.clone().addScaledVector(fwd, -2.3).addScaledVector(this.up, 0.6);
-      Particles.spawn(p, fwd.clone().multiplyScalar(-10).add(new V3(rand(-2, 2), rand(-2, 2), rand(-2, 2))), this.neuroT > 0 ? 0xff4fd8 : 0x60c8ff, 2.2, 0.35, { grow: -3 });
+      Particles.spawn(p, fwd.clone().multiplyScalar(-10).add(new V3(rand(-2, 2), rand(-2, 2), rand(-2, 2))), this.neuroT > 0 ? 0xff4fd8 : 0x60c8ff, 0.9, 0.3, { grow: -2 });
     }
   }
 }

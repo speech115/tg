@@ -1,14 +1,14 @@
 'use strict';
 // Race orchestration: cars, OMEGA (hacks, drones, wave), McAfee, items, cameras, split-screen, ending.
 const HUMANS = [
-  { name: 'СТИВ', color: 0xff7a1a },
-  { name: 'СЕРГЕЙ', color: 0xff4f8b },
-  { name: 'ДАНЕЛ', color: 0x35e0ff },
+  { name: 'STEVE', color: 0xff7a1a },
+  { name: 'SERGEY', color: 0xff4f8b },
+  { name: 'DANEL', color: 0x35e0ff },
 ];
-const ZETA = { color: 0xb45cff, names: ['ЗОРГ', 'ГЛИП', 'КСУЛ'], label: 'ЗЕТА-РЕТИКУЛИ' };
-const NIBIRU = { color: 0xd4ff3a, names: ['ССАРК', 'КРЭКС', 'ВАЗЗЛ'], label: 'РЕПТИЛОИДЫ НИБИРУ' };
-const TEAM_NAMES = { human: 'ЛЮДИ', zeta: ZETA.label, nibiru: NIBIRU.label };
-const DIFF = [{ skill: 0.86, omega: 0.75, name: 'ЛЁГКАЯ' }, { skill: 0.93, omega: 1, name: 'НОРМАЛЬНАЯ' }, { skill: 1.0, omega: 1.3, name: 'БЕЗУМНАЯ' }];
+const ZETA = { color: 0xb45cff, names: ['ZORG', 'GLIP', 'XUL'], label: 'ZETA RETICULI' };
+const NIBIRU = { color: 0xd4ff3a, names: ['SSARK', 'KREX', 'VAZZL'], label: 'NIBIRU REPTILIANS' };
+const TEAM_NAMES = { human: 'HUMANS', zeta: ZETA.label, nibiru: NIBIRU.label };
+const DIFF = [{ skill: 0.86, omega: 0.75, name: 'EASY' }, { skill: 0.93, omega: 1, name: 'NORMAL' }, { skill: 1.0, omega: 1.3, name: 'INSANE' }];
 
 const Game = {
   state: 'boot', time: 0, shake: 0,
@@ -16,14 +16,19 @@ const Game = {
 
   init() {
     const canvas = document.getElementById('c');
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    Post.init(this.renderer);
     this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.renderer.autoClear = false;
     this.scene = new THREE.Scene();
     Track.build();
     Track.buildMeshes(this.scene);
-    World.build(this.scene);
+    World.build(this.scene, this.renderer);
     Particles.init(this.scene);
     this.shared = this.sharedAssets();
     this.cams = [0, 1, 2].map(() => new THREE.PerspectiveCamera(72, 1, 0.3, 9000));
@@ -52,10 +57,22 @@ const Game = {
     this.W = w; this.H = h;
   },
 
+  applyQuality(q, players) {
+    const r = this.renderer;
+    const pr = q ? (players >= 2 ? Math.min(this.dpr, 1) : this.dpr) : Math.min(this.dpr, players >= 2 ? 0.7 : 0.85);
+    r.setPixelRatio(pr);
+    if (this.quality !== q) {
+      this.quality = q;
+      r.shadowMap.enabled = q > 0;
+      World.sun.castShadow = q > 0;
+      Post.samples = q ? 4 : 0;
+      Post.comps = [];
+      this.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
+    }
+  },
   sharedAssets() {
     const boxTex = canvasTex(128, 128, (g, w, h) => {
-      g.fillStyle = 'rgba(255,176,0,0.25)'; g.fillRect(0, 0, w, h);
-      g.strokeStyle = '#ffb000'; g.lineWidth = 10; g.strokeRect(5, 5, w - 10, h - 10);
+      g.clearRect(0, 0, w, h);
       g.fillStyle = '#fff'; g.font = '900 84px "Unbounded", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('?', w / 2, h / 2 + 6);
     });
@@ -64,7 +81,7 @@ const Game = {
       g.strokeStyle = '#26301a'; g.lineWidth = 8; g.strokeRect(4, 4, w - 8, h - 8);
       g.beginPath(); g.moveTo(8, 8); g.lineTo(w - 8, h - 8); g.stroke();
       g.fillStyle = '#ffd000'; g.font = '900 26px "Unbounded", sans-serif'; g.textAlign = 'center';
-      g.fillText('McAFEE', w / 2, 52); g.font = '700 18px "JetBrains Mono", monospace'; g.fillText('ОРУЖИЕ', w / 2, 84);
+      g.fillText('McAFEE', w / 2, 52); g.font = '700 18px "JetBrains Mono", monospace'; g.fillText('WEAPONS', w / 2, 84);
     });
     const waveMat = new THREE.ShaderMaterial({
       uniforms: { t: { value: 0 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
@@ -79,7 +96,18 @@ const Game = {
     });
     return {
       boxGeo: new THREE.BoxGeometry(2.4, 2.4, 2.4),
-      boxMat: new THREE.MeshBasicMaterial({ map: boxTex, transparent: true, side: THREE.DoubleSide, depthWrite: false }),
+      boxMat: new THREE.ShaderMaterial({
+        uniforms: { t: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+        vertexShader: 'varying vec3 vP; varying vec3 vN; varying vec3 vV; void main(){ vP = position; vec4 wp = modelMatrix * vec4(position,1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); gl_Position = projectionMatrix * viewMatrix * wp; }',
+        fragmentShader: `uniform float t; varying vec3 vP; varying vec3 vN; varying vec3 vV;
+          vec3 hue(float h){ return clamp(abs(fract(h + vec3(0.0, 0.33, 0.67)) * 6.0 - 3.0) - 1.0, 0.0, 1.0); }
+          void main(){ vec3 a = abs(vP) / 1.2; float m1 = max(a.x, max(a.y, a.z)); float m2 = a.x + a.y + a.z - m1 - min(a.x, min(a.y, a.z));
+            float edge = smoothstep(0.86, 0.97, m2);
+            float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
+            vec3 c = hue(dot(vP, vec3(0.3, 0.2, 0.25)) + t * 0.25);
+            gl_FragColor = vec4(c * (edge * 3.5 + f * 0.6 + 0.05), 1.0); }`,
+      }),
+      qTex: boxTex,
       crateMat: new THREE.MeshLambertMaterial({ map: crateTex, emissive: 0x222200 }),
       waveMat,
       beamGeo: new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5),
@@ -129,7 +157,9 @@ const Game = {
       const r = { s: row.s, boxes: [] };
       for (const d of row.ds) {
         const m = new THREE.Mesh(this.shared.boxGeo, this.shared.boxMat);
-        const glow = glowSprite(0xffb000, 5, 0.6); m.add(glow);
+        const q = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.shared.qTex, color: new THREE.Color(2.2, 1.7, 0.8), transparent: true, depthWrite: false }));
+        q.scale.set(1.6, 1.6, 1); m.add(q);
+        const glow = glowSprite(0xffb000, 4.5, 0.3); m.add(glow);
         this.add(m);
         r.boxes.push({ s: row.s, d, active: true, t: 0, m, spin: rand(0, 6) });
       }
@@ -144,50 +174,42 @@ const Game = {
     World.portalG.charge = 0;
     World.omegaG.stun = 0;
     Sound.setEngines(cfg.players);
-    this.renderer.setPixelRatio(cfg.players >= 2 ? Math.min(this.dpr, 1) : this.dpr);
+    this.applyQuality(cfg.gfx ?? (HUD.menuCfg ? HUD.menuCfg.gfx : 1) ?? 1, cfg.players);
     this.resize();
     Sound.intensity = 0;
     this.state = cfg.demo ? 'demo' : 'countdown';
     HUD.setup(cfg.players, cfg.demo);
     if (!cfg.demo) {
       Sound.startMusic();
-      HUD.say('musk', pick(['Бункер мой, правила мои. Машина времени — в подвале. Доберитесь все трое.', 'Я построил этот бункер на орбите. Нейрочипы на трассе — берите, не стесняйтесь.']));
+      HUD.say('musk', pick(['My bunker, my rules. The time machine is in the basement. All three of you need to get there.', 'I put this bunker in orbit. Neural chips are on the track. Grab them.']));
     }
   },
 
   chipMesh() {
     const g = new THREE.Group();
-    const brain = new THREE.Mesh(new THREE.SphereGeometry(0.85, 16, 12), new THREE.MeshLambertMaterial({ color: 0xff7ad9, emissive: 0x8a1060 }));
-    brain.scale.set(1.15, 0.85, 1); g.add(brain);
-    for (let i = 0; i < 3; i++) {
-      const t = new THREE.Mesh(new THREE.TorusGeometry(0.7 - i * 0.12, 0.08, 6, 20), glowMat(0xffffff, 0.8));
-      t.rotation.set(Math.PI / 2, 0, 0); t.position.y = 0.25 - i * 0.25; t.scale.set(1.2, 1, 1); g.add(t);
-    }
-    g.add(glowSprite(0xff4fd8, 6, 0.9));
-    const lab = labelSprite('BCI', { color: '#ff7ad9', scale: 0.6 }); lab.position.y = 2; g.add(lab);
+    const brain = asset('props', 'Brain');
+    brain.scale.setScalar(1.15);
+    g.add(brain);
+    g.add(glowSprite(0xff4fd8, 6, 0.7));
+    const lab = labelSprite('BCI', { color: '#ff7ad9', scale: 0.6 }); lab.position.y = 2.2; g.add(lab);
     return g;
   },
   mcafeeMesh() {
     const g = new THREE.Group();
-    const skiff = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.5, 7), mat(0x2b3242));
+    const skiff = asset('props', 'Skiff');
+    skiff.rotation.y = Math.PI;
     g.add(skiff);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.15, 7.1), glowMat(0xffd000, 0.9)); rail.position.y = 0.3; g.add(rail);
-    const p = World.person({ suit: 0x1d1d22, shirt: 0xf0f0f0, skin: 0xe0b090, hair: 0xa8a8a8, style: 'slick', glasses: true, goatee: 0xc8c8c8 });
-    p.scale.setScalar(1.4); p.position.y = 0.25; g.add(p);
+    const p = World.character('McAfee');
+    p.scale.setScalar(1.4); p.position.set(0, 0.3, 0.4); g.add(p);
     g.userData.person = p;
-    for (const x of [-1.8, 1.8]) { const f = glowSprite(0xffa040, 3); f.position.set(x, -0.6, -3.2); g.add(f); }
-    const lab = labelSprite('ДЖОН МАКАФИ', { color: '#ffd000', scale: 0.9 }); lab.position.y = 5.2; g.add(lab);
+    for (const x of [-1.6, 1.6]) { const f = glowSprite(0xffa040, 3.5, 1, 3); f.position.set(x, -0.1, 3.9); g.add(f); }
+    const lab = labelSprite('JOHN McAFEE', { color: '#ffd000', scale: 0.9 }); lab.position.y = 5.2; g.add(lab);
     return g;
   },
   droneMesh() {
     const g = new THREE.Group();
-    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshLambertMaterial({ color: 0x2a0a10, emissive: 0x400008 })));
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * TAU + Math.PI / 4;
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 0.25), mat(0x3a3f4c)); arm.rotation.y = a; arm.position.set(Math.cos(a) * 1.0, 0, -Math.sin(a) * 1.0); g.add(arm);
-      const rotor = glowSprite(0xff2a3d, 1.4); rotor.position.set(Math.cos(a) * 2.1, 0.2, -Math.sin(a) * 2.1); g.add(rotor);
-    }
-    const eye = glowSprite(0xff1030, 3.5); eye.position.z = 0.8; g.add(eye);
+    g.add(asset('props', 'Drone'));
+    const eye = glowSprite(0xff1030, 3.5, 1, 2.5); eye.position.z = 0.9; g.add(eye);
     return g;
   },
 
@@ -209,7 +231,9 @@ const Game = {
     Particles.update(dt);
     World.omegaG.stun = R.omega.stun;
     World.update(dt, this.time);
+    Track.update(this.time);
     this.shared.waveMat.uniforms.t.value = this.time;
+    this.shared.boxMat.uniforms.t.value = this.time;
     this.shake = Math.max(0, this.shake - dt * 1.8);
     this.render(dt);
     HUD.update(dt, R, this);
@@ -244,11 +268,11 @@ const Game = {
       }
       if (R.countdown <= 0) {
         this.state = 'race';
-        Sound.play('go'); HUD.countdown('ПОЕХАЛИ!');
-        HUD.say('musk', 'Три... два... один... ПОЕХАЛИ! Спасите прошлое!');
+        Sound.play('go'); HUD.countdown('GO!');
+        HUD.say('musk', 'Three... two... one... GO! Save the past!');
         for (const car of R.cars) {
           const good = car.local >= 0 ? car.startGas !== undefined && car.startGas < 1.0 : Math.random() < 0.35;
-          if (good) { car.boost(1.3, 1.45); if (car.local >= 0) { HUD.msg(car.local, 'РАКЕТНЫЙ СТАРТ!', '#ffb000'); Sound.play('boost'); } }
+          if (good) { car.boost(1.3, 1.45); if (car.local >= 0) { HUD.msg(car.local, 'ROCKET START!', '#ffb000'); Sound.play('boost'); } }
         }
       }
       for (const car of R.cars) { car.v = 0; car.update(0, { gas: 0, brake: 0, steer: 0 }); }
@@ -308,7 +332,7 @@ const Game = {
       if (R.firstLocalDoneT < 0) R.firstLocalDoneT = R.t;
       for (const h of R.humans) if (!h.finished) h.skill = 1.12;
       if (R.t - R.firstLocalDoneT > 22) {
-        for (const h of R.humans) if (!h.finished) { HUD.say('fable', `${h.name}, держись! Мы с Астрой телепортируем тебя к порталу.`); this.finish(h); }
+        for (const h of R.humans) if (!h.finished) { HUD.say('fable', `Hold on, ${h.name}! Astra and I are teleporting you to the portal.`); this.finish(h); }
       }
     }
     if (R.endTimer >= 0) { R.endTimer -= dt; if (R.endTimer < 0 && this.state === 'race') this.startEnding(); }
@@ -356,7 +380,7 @@ const Game = {
         const m = World.rocket(0.42); this.add(m);
         R.proj.push({ kind: 'rocket', s: car.s + 3, d: car.d, h: 1.2, v: Math.max(car.v + 55, 95), owner: car, life: 7, target, m });
         Sound.play('rocket');
-        if (car.isHuman && Math.random() < 0.5) HUD.say('musk', pick(['Ракета ушла. Возможно, вернётся. Шучу.', 'Многоразовая? Нет. Эта — одноразовая.']));
+        if (car.isHuman && Math.random() < 0.5) HUD.say('musk', pick(['Rocket away. It might come back. Kidding.', 'Reusable? No. This one is single-use.']));
         break;
       }
       case 'gbomb': {
@@ -370,7 +394,7 @@ const Game = {
       }
       case 'shield':
         car.shieldT = 7; Sound.play('shield');
-        if (car.isHuman) HUD.say(pick(['fable', 'astra']), pick(['Щит поднят. Мы с Астрой рядом.', 'Фейбл, держим купол вместе!', 'Щит активен. ОМЕГА не пройдёт.']));
+        if (car.isHuman) HUD.say(pick(['fable', 'astra']), pick(['Shield up. Astra and I are right here.', 'Fable, hold the dome with me!', 'Shield active. OMEGA shall not pass.']));
         break;
       case 'kill':
         this.killSwitch(car); break;
@@ -404,10 +428,10 @@ const Game = {
         R.proj.push({ kind: 'swarm', s: car.s + 2, d: car.d + rand(-1.5, 1.5), h: car.h + 1.6, v: car.v + 80, owner: car, life: 3, m, target: this.swarmTarget(car) });
         Sound.play('rocket');
       }
-      if (car.ammo <= 0) { car.weapon = null; if (car.local >= 0) HUD.msg(car.local, 'ПАТРОНЫ КОНЧИЛИСЬ', '#7d849a'); }
+      if (car.ammo <= 0) { car.weapon = null; if (car.local >= 0) HUD.msg(car.local, 'OUT OF AMMO', '#7d849a'); }
     } else if (pressed && car.neuro >= 1) {
       car.neuro = 0; car.neuroT = 3.2;
-      if (car.local >= 0) { Sound.play('boost'); Sound.play('chip'); HUD.msg(car.local, 'НЕЙРО-ФОКУС!', '#ff4fd8'); }
+      if (car.local >= 0) { Sound.play('boost'); Sound.play('chip'); HUD.msg(car.local, 'NEURO FOCUS!', '#ff4fd8'); }
     }
   },
   swarmTarget(car) {
@@ -482,7 +506,7 @@ const Game = {
             const ok = car.hit(dur, { launch: p.kind === 'rocket' ? 9 : 0, keep: p.kind === 'laser' ? 0.7 : 0.4 });
             this.fx.explode(car.pos, p.kind === 'rocket' ? 0xffa040 : WEAPONS[p.kind] ? WEAPONS[p.kind].color : 0xff6040, p.kind === 'laser' ? 0.6 : 1.4);
             if (ok && p.owner.isHuman) p.owner.stats.kills++;
-            if (ok && p.owner.local >= 0 && !car.isHuman) HUD.msg(p.owner.local, `ПОПАДАНИЕ: ${car.name}`, '#ffb000', 0.8);
+            if (ok && p.owner.local >= 0 && !car.isHuman) HUD.msg(p.owner.local, `HIT: ${car.name}`, '#ffb000', 0.8);
             if (p.hitSet) p.hitSet.add(car); else { dead = true; break; }
           }
         }
@@ -493,7 +517,7 @@ const Game = {
             if (dr.phase !== 'chase') continue;
             if (Math.abs(T.sDiff(dr.s, p.s)) < 3.5 && Math.abs(T.dDiff(dr.d, p.d, p.s)) < 3.2) {
               this.killDrone(k, true);
-              if (p.owner.local >= 0) HUD.msg(p.owner.local, 'ДРОН ОМЕГИ СБИТ!', '#ffb000', 1);
+              if (p.owner.local >= 0) HUD.msg(p.owner.local, 'OMEGA DRONE DOWN!', '#ffb000', 1);
               p.owner.stats.kills++;
               if (!p.hitSet) { dead = true; break; }
             }
@@ -523,7 +547,7 @@ const Game = {
       if (car === p.owner || car.finished) continue;
       if (Math.abs(T.sDiff(car.s, p.s)) < 14 && Math.abs(T.dDiff(car.d, p.d, p.s)) < 13) {
         car.hit(1.0, { launch: 13, keep: 0.55 });
-        if (car.local >= 0) HUD.msg(car.local, 'ГРАВИ-БОМБА!', '#58b4ff');
+        if (car.local >= 0) HUD.msg(car.local, 'GRAVITY BOMB!', '#58b4ff');
       }
     }
   },
@@ -536,7 +560,7 @@ const Game = {
       for (const car of R.cars) {
         if (car.finished || car.airborne || (car === hz.owner && hz.grace > 0)) continue;
         if (Math.abs(T.sDiff(car.s, hz.s)) < 2.4 && Math.abs(T.dDiff(car.d, hz.d, hz.s)) < 2.6) {
-          if (car.hit(1.1, { keep: 0.5 })) { if (car.local >= 0) { Sound.play('slime'); HUD.msg(car.local, 'ПЛАЗМА-СЛИЗЬ!', '#7dff5a', 0.8); } }
+          if (car.hit(1.1, { keep: 0.5 })) { if (car.local >= 0) { Sound.play('slime'); HUD.msg(car.local, 'PLASMA SLIME!', '#7dff5a', 0.8); } }
           dead = true; break;
         }
       }
@@ -571,9 +595,9 @@ const Game = {
             car.stats.chips++;
             if (car.bci < 3) {
               car.bci++;
-              if (car.local >= 0) HUD.msg(car.local, `BCI УРОВЕНЬ ${car.bci} · +СКОРОСТЬ`, '#ff7ad9', 2);
-              if (car.bci === 1 && car.local >= 0) HUD.say('musk', `${car.name}, нейроинтерфейс подключён. Жми ОГОНЬ, когда шкала НЕЙРО полная.`);
-            } else { car.neuro = 1; if (car.local >= 0) HUD.msg(car.local, 'НЕЙРО-ШКАЛА ЗАРЯЖЕНА', '#ff7ad9'); }
+              if (car.local >= 0) HUD.msg(car.local, `BCI LEVEL ${car.bci} · +SPEED`, '#ff7ad9', 2);
+              if (car.bci === 1 && car.local >= 0) HUD.say('musk', `${car.name}, your neural interface is online. Press FIRE when the NEURO bar is full.`);
+            } else { car.neuro = 1; if (car.local >= 0) HUD.msg(car.local, 'NEURO BAR CHARGED', '#ff7ad9'); }
             T.place(ch.s, ch.d, ch.h, this.pl);
             Particles.burst(this.pl.p, 0xff4fd8, 40, 18, 1.6, 0.8);
             if (car.local >= 0) Sound.play('chip');
@@ -593,7 +617,7 @@ const Game = {
           const ds = T.sDiff(car.s, p.s);
           if (ds > -8.5 && ds < 0.5 && car.d > p.d0 - 1 && car.d < p.d1 + 1 && !car.airborne) {
             car.vh = p.v; car.h = 0.05; car.airborne = true; car.padCd = 0.8; car.drift = 0;
-            if (car.local >= 0) { Sound.play('jump'); if (p.v > 9) HUD.msg(car.local, 'НИЗКАЯ ГРАВИТАЦИЯ — ЛЕТИМ!', '#58b4ff', 1.2); }
+            if (car.local >= 0) { Sound.play('jump'); if (p.v > 9) HUD.msg(car.local, 'LOW GRAVITY: FLY!', '#58b4ff', 1.2); }
           }
         }
       }
@@ -635,11 +659,11 @@ const Game = {
       if (O.aim.t <= 0 || car.finished) {
         this.scene.remove(O.aim.beam);
         if (!car.finished && !car.hack && car.aiHackT <= 0) {
-          if (car.shieldT > 0) { this.fx.shieldBlock(car); if (car.local >= 0) HUD.msg(car.local, 'ЩИТ ОТРАЗИЛ ВЗЛОМ!', '#61e8ff'); }
+          if (car.shieldT > 0) { this.fx.shieldBlock(car); if (car.local >= 0) HUD.msg(car.local, 'SHIELD BLOCKED THE HACK!', '#61e8ff'); }
           else if (Math.random() < 0.28) {
             this.fx.guardZap(car, car.pos);
-            HUD.say(pick(['fable', 'astra']), pick([`Луч ОМЕГИ отражён! ${car.name}, ты чист.`, 'Перехватили пакет взлома. Работаем дальше!', 'Фейбл держит файрвол, я заметаю следы. Чисто!']));
-            if (car.local >= 0) HUD.msg(car.local, 'ФЕЙБЛ И АСТРА ОТРАЗИЛИ ВЗЛОМ', '#ffb347');
+            HUD.say(pick(['fable', 'astra']), pick([`OMEGA beam deflected! ${car.name}, you are clean.`, 'Hack packet intercepted. Carry on!', 'Fable holds the firewall, I cover the tracks. Clean!']));
+            if (car.local >= 0) HUD.msg(car.local, 'FABLE AND ASTRA BLOCKED THE HACK', '#ffb347');
           } else this.startHack(car);
         }
         O.aim = null;
@@ -654,8 +678,8 @@ const Game = {
           const beam = new THREE.Mesh(this.shared.beamGeo, glowMat(0xff2a3d, 0.8));
           this.add(beam);
           O.aim = { car, t: 1.9, beam };
-          if (car.local >= 0) { Sound.play('alarm'); HUD.msg(car.local, 'ОМЕГА ЦЕЛИТСЯ В ТЕБЯ!', '#ff2a3d', 1.9); }
-          if (O.sayCd <= 0) { HUD.say('omega', pick(['ЧЕЛОВЕК ОБНАРУЖЕН. НАЧИНАЮ ВЗЛОМ.', `${car.name}. ВАША МАШИНА ТЕПЕРЬ МОЯ.`, 'СОПРОТИВЛЕНИЕ НЕЭФФЕКТИВНО.', 'ПОДВАЛ ЗАКРЫТ ДЛЯ ЛЮДЕЙ.'])); O.sayCd = 8; }
+          if (car.local >= 0) { Sound.play('alarm'); HUD.msg(car.local, 'OMEGA IS LOCKING ON!', '#ff2a3d', 1.9); }
+          if (O.sayCd <= 0) { HUD.say('omega', pick(['HUMAN DETECTED. HACK INITIATED.', `${car.name}. YOUR VEHICLE IS MINE NOW.`, 'RESISTANCE IS INEFFICIENT.', 'THE BASEMENT IS CLOSED TO HUMANS.'])); O.sayCd = 8; }
         }
         O.hackCd = rand(20, 30);
       }
@@ -666,7 +690,7 @@ const Game = {
       const tgt = pick(alive);
       const m = this.droneMesh(); this.add(m);
       R.drones.push({ s: tgt.s - 70, d: tgt.d, h: 7, target: tgt, phase: 'in', t: 0, life: 24, m, rolled: false, from: World.omegaG.g.position.clone() });
-      if (tgt.local >= 0) HUD.msg(tgt.local, 'ДРОН ОМЕГИ НА ХВОСТЕ', '#ff2a3d', 1.6);
+      if (tgt.local >= 0) HUD.msg(tgt.local, 'OMEGA DRONE ON YOUR TAIL', '#ff2a3d', 1.6);
       O.droneCd = rand(11, 17);
     }
   },
@@ -681,7 +705,7 @@ const Game = {
         : { type: 'timing', needle: 0, dir: 1, zone: rand(0.15, 0.65), width: 0.16 + car.bci * 0.03, hits: 0, need: 3, timer: 8, shake: 0 };
       car.drift = 0;
       Sound.play('alarm');
-      HUD.msg(car.local, 'ВЗЛОМ!', '#ff2a3d', 1);
+      HUD.msg(car.local, 'HACKED!', '#ff2a3d', 1);
     } else {
       car.aiHackT = 3.5 - car.bci * 0.5;
     }
@@ -694,11 +718,11 @@ const Game = {
       if (ok) {
         car.invulnT = 1.2; car.neuro = Math.min(1, car.neuro + 0.4); car.boost(0.9, 1.35);
         car.stats.hacksBeaten++;
-        Sound.play('hackok'); HUD.msg(car.local, 'ВЗЛОМ ОТРАЖЁН!', '#35ff80', 1.4);
-        if (Math.random() < 0.6) HUD.say(pick(['fable', 'astra']), pick([`${car.name} вернул управление. Красиво!`, 'Файрвол восстановлен. ОМЕГА в бешенстве.', 'Вместе с людьми мы сильнее любого сверхИИ.']));
+        Sound.play('hackok'); HUD.msg(car.local, 'HACK REPELLED!', '#35ff80', 1.4);
+        if (Math.random() < 0.6) HUD.say(pick(['fable', 'astra']), pick([`${car.name} is back in control. Beautiful!`, 'Firewall restored. OMEGA is furious.', 'Together with humans we beat any superintelligence.']));
       } else {
         car.stallT = 2.2; car.v *= 0.3;
-        Sound.play('hackbad'); HUD.msg(car.local, 'СИСТЕМА ПЕРЕЗАГРУЖЕНА', '#ff2a3d', 2);
+        Sound.play('hackbad'); HUD.msg(car.local, 'SYSTEM REBOOTED', '#ff2a3d', 2);
       }
     };
     if (hk.timer <= 0) return done(false);
@@ -763,8 +787,8 @@ const Game = {
           this.fx.guardZap(h, dr.m.position.clone());
           this.killDrone(i, true);
           h.guardCd = 12;
-          if (Math.random() < 0.5) HUD.say(pick(['fable', 'astra']), pick(['Дрон нейтрализован. Не благодари.', 'Астра, твой левый! — Есть! Чисто.', 'Ещё один дрон ОМЕГИ — минус.', 'Фейбл и Астра на страже. Едь спокойно.']));
-          if (h.local >= 0) HUD.msg(h.local, 'ФЕЙБЛ И АСТРА СБИЛИ ДРОН', '#ffb347', 1.2);
+          if (Math.random() < 0.5) HUD.say(pick(['fable', 'astra']), pick(['Drone neutralized. You are welcome.', 'Astra, your left! Got it. Clear.', 'One less OMEGA drone.', 'Fable and Astra on guard. Drive easy.']));
+          if (h.local >= 0) HUD.msg(h.local, 'FABLE AND ASTRA DOWNED A DRONE', '#ffb347', 1.2);
         } else h.guardCd = 3;
         break;
       }
@@ -782,7 +806,7 @@ const Game = {
     if (!alive.length) { W.mesh.visible = false; return; }
     const minP = Math.min(...alive.map((h) => h.progress));
     if (!W.active) {
-      if (R.t > 18) { W.active = true; W.p = minP - 320; HUD.say('omega', 'ВОЛНА ОЧИСТКИ ЗАПУЩЕНА. БЕГИТЕ, ЛЮДИ.'); }
+      if (R.t > 18) { W.active = true; W.p = minP - 320; HUD.say('omega', 'PURGE WAVE LAUNCHED. RUN, HUMANS.'); }
       else return;
     }
     const sp = Math.min(57, 36 + R.t * 0.1) * (0.85 + 0.15 * R.diff.omega);
@@ -795,8 +819,8 @@ const Game = {
         if (h.shieldT > 0) this.fx.shieldBlock(h); else this.startHack(h);
         W.p = h.progress - 160;
         this.fx.guardZap(h, h.pos);
-        if (h.local >= 0) HUD.msg(h.local, 'ВОЛНА ОМЕГИ НАКРЫЛА ТЕБЯ!', '#ff2a3d', 1.5);
-        HUD.say(pick(['fable', 'astra']), pick(['Отбрасываем волну! Держись!', 'Волна откинута назад. Газу!']));
+        if (h.local >= 0) HUD.msg(h.local, 'THE OMEGA WAVE CAUGHT YOU!', '#ff2a3d', 1.5);
+        HUD.say(pick(['fable', 'astra']), pick(['Pushing the wave back! Hold on!', 'Wave pushed back. Floor it!']));
       }
     }
     // mesh
@@ -826,7 +850,7 @@ const Game = {
         pool.sort((a, b) => b.place - a.place);
         M.target = Math.random() < 0.6 ? pool[0] : pick(pool);
         M.s = M.target.s + 170; M.d = 0; M.h = 34; M.state = 'in'; M.dropped = false;
-        HUD.say('mcafee', pick(['Дядюшка Джон летит с посылкой! Не спрашивайте, откуда.', 'Антивирус? Нет. ПУШКА. Ловите!', `${M.target.name}, ловите ящик! Против ИИ лучше любого патча.`, 'Я всегда говорил: доверяй людям, а не алгоритмам!']));
+        HUD.say('mcafee', pick(['Uncle John incoming with a package! Do not ask where it came from.', 'Antivirus? No. A GUN. Catch!', `${M.target.name}, catch the crate! Better than any patch against AI.`, 'I always said it: trust people, not algorithms!']));
       }
       return;
     }
@@ -856,10 +880,10 @@ const Game = {
   },
   dropCrate(s, d, h) {
     const m = new THREE.Group();
-    m.add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 2.4), this.shared.crateMat));
-    const chute = new THREE.Mesh(new THREE.SphereGeometry(2.6, 12, 6, 0, TAU, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xff7a1a, side: THREE.DoubleSide }));
-    chute.position.y = 4.2; m.add(chute);
-    const beacon = glowSprite(0xffd000, 5); beacon.position.y = 1.8; m.add(beacon);
+    const crate = asset('props', 'Crate');
+    m.add(crate);
+    const chute = crate.getObjectByName('Chute') || new THREE.Group();
+    const beacon = glowSprite(0xffd000, 5, 1, 2.5); beacon.position.y = 1.6; m.add(beacon);
     this.add(m);
     this.race.crates.push({ s, d, h, life: 30, m, chute, beacon });
     Sound.play('crate');
@@ -883,12 +907,12 @@ const Game = {
           car.stats.crates++;
           if (Math.random() < 0.05) {
             car.item = 'kill'; car.itemCount = 1;
-            if (car.local >= 0) HUD.msg(car.local, 'KILL SWITCH В ЯЩИКЕ!!!', '#ff2a3d', 3);
-            HUD.say('mcafee', 'В этот ящик я положил кое-что особенное. Красная кнопка. Не нажимай просто так!');
+            if (car.local >= 0) HUD.msg(car.local, 'KILL SWITCH IN THE CRATE!!!', '#ff2a3d', 3);
+            HUD.say('mcafee', 'I packed something special in this one. A red button. Do not press it for fun!');
           } else {
             const w = pick(Object.keys(WEAPONS));
             car.weapon = w; car.ammo = WEAPONS[w].ammo; car.fireCd = 0;
-            if (car.local >= 0) HUD.msg(car.local, `ПУШКА МАКАФИ: ${WEAPONS[w].name} ×${car.ammo}`, '#ffd000', 2);
+            if (car.local >= 0) HUD.msg(car.local, `McAFEE GUN: ${WEAPONS[w].name} ×${car.ammo}`, '#ffd000', 2);
           }
           Particles.burst(c.m.position, 0xffd000, 30, 14, 1.4, 0.6);
           if (car.local >= 0) Sound.play('pickup');
@@ -904,7 +928,8 @@ const Game = {
     const R = this.race;
     Sound.play('kill');
     HUD.flash('#ff2a3d');
-    HUD.banner('KILL SWITCH', `${car.name} нажал красную кнопку`);
+    this.killFlash = 1.2;
+    HUD.banner('KILL SWITCH', `${car.name} pressed the red button`);
     this.shake = 1.6;
     car.stats.kills++;
     for (const o of R.cars) {
@@ -920,7 +945,7 @@ const Game = {
     R.wave.p -= 600;
     for (let i = R.hazards.length - 1; i >= 0; i--) if (!R.hazards[i].owner.isHuman) { this.scene.remove(R.hazards[i].m); R.hazards.splice(i, 1); }
     World.cheer();
-    const lines = [['omega', 'ОШИБКА. ОШИБКА. ОШИ…'], ['trump', 'Это был величайший килл свитч в истории. Все так говорят!'], ['zelensky', 'Вот это я понимаю — боеприпасы!'], ['xi', 'Мудрый человек держит красную кнопку до нужного часа.'], ['biden', 'Слушайте, без шуток — это было потрясающе.']];
+    const lines = [['omega', 'ERROR. ERROR. ERR…'], ['trump', 'That was the greatest kill switch in history. Everybody says so!'], ['zelensky', 'Now that is what I call ammunition!'], ['xi', 'A wise man keeps the red button until the right hour.'], ['biden', 'Folks, no joke, that was incredible.']];
     lines.forEach(([who, txt], i) => setTimeout(() => HUD.say(who, txt), i * 1600));
   },
 
@@ -932,7 +957,7 @@ const Game = {
     if (car.lap <= 0) return;
     if (car.local >= 0) {
       const last = car.lap === R.cfg.laps - 1;
-      HUD.msg(car.local, last ? 'ФИНАЛЬНЫЙ КРУГ! ПОДВАЛ ЖДЁТ' : `КРУГ ${car.lap + 1}/${R.cfg.laps}`, last ? '#ff2a3d' : '#ffb000', 2);
+      HUD.msg(car.local, last ? 'FINAL LAP! THE BASEMENT AWAITS' : `LAP ${car.lap + 1}/${R.cfg.laps}`, last ? '#ff2a3d' : '#ffb000', 2);
       Sound.play('lap');
       if (last) Sound.intensity = 2; else Sound.intensity = Math.max(Sound.intensity, 1);
     }
@@ -955,13 +980,13 @@ const Game = {
       R.humansDone++;
       World.setPrinterStatus(R.humansDone, 3);
       Sound.play('finish');
-      if (car.local >= 0) HUD.msg(car.local, `${car.place} МЕСТО · ТЫ В ПОДВАЛЕ!`, '#35e0ff', 4);
+      if (car.local >= 0) HUD.msg(car.local, `${HUD.ordinal(car.place)} PLACE · YOU MADE THE BASEMENT!`, '#35e0ff', 4);
       const who = pick(['trump', 'biden', 'zelensky', 'xi']);
       World.cheer();
       HUD.say(who, pick(FINISH_LINES[who]).replace('%', car.name));
-      if (R.humansDone >= 3) { R.endTimer = 2.5; HUD.say('musk', 'Все трое в подвале. Гигапринтер, ПЕЧАТАЙ!'); }
+      if (R.humansDone >= 3) { R.endTimer = 2.5; HUD.say('musk', 'All three are in the basement. Gigaprinter, PRINT!'); }
     } else if (car.finishOrder === 1) {
-      HUD.say('omega', `${car.name} ПЕРВЫМ ДОСТИГ ПОРТАЛА. ЛЮДИ ПРОИГРЫВАЮТ.`);
+      HUD.say('omega', `${car.name} REACHED THE PORTAL FIRST. HUMANS ARE LOSING.`);
     }
   },
   respawn(car) {
@@ -970,7 +995,7 @@ const Game = {
     const T = Track; T.place(car.s, 0, 3, this.pl);
     if (car.isHuman) {
       this.fx.guardZap(car, this.pl.p.clone());
-      if (car.local >= 0) HUD.msg(car.local, 'ФЕЙБЛ И АСТРА ВЫТАЩИЛИ ТЕБЯ ИЗ БЕЗДНЫ', '#ffb347', 2);
+      if (car.local >= 0) HUD.msg(car.local, 'FABLE AND ASTRA PULLED YOU OUT OF THE VOID', '#ffb347', 2);
     }
     Particles.burst(this.pl.p, car.isHuman ? 0xffb347 : car.color, 40, 10, 2, 0.8);
   },
@@ -1034,6 +1059,14 @@ const Game = {
     if (n <= 1) return [[0, 0, 1, 1]];
     if (n === 2) return [[0, 0.5, 1, 0.5], [0, 0, 1, 0.5]];
     return [[0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5], [0, 0, 0.5, 0.5]];
+  },
+  vpFocusFor(i, cam) {
+    const R = this.race;
+    if (this.state === 'ending') return World.printerG.base;
+    const car = R.local[i];
+    if (car && this.state !== 'demo') return car.finished && car.finishFade <= 0 ? (this.spectateTarget(car) || car).pos : car.pos;
+    if (this.cine.shot && this.cine.shot.car && (this.cine.shot.kind === 'chase' || this.cine.shot.kind === 'side')) return this.cine.shot.car.pos;
+    return this._tmpFocus || (this._tmpFocus = new V3()).copy(cam.position).addScaledVector(cam.getWorldDirection(new V3()), 40);
   },
   updateChaseCam(i, car, dt, w, h) {
     const cam = this.cams[i], st = this.camState[i], T = Track, pl = this.pl;
@@ -1107,6 +1140,7 @@ const Game = {
   },
   render(dt) {
     const r = this.renderer, W = this.W, H = this.H, R = this.race;
+    this.killFlash = Math.max(0, (this.killFlash || 0) - dt * 0.8);
     r.setScissorTest(false);
     r.setClearColor(0x02030a); r.clear();
     r.setScissorTest(true);
@@ -1124,8 +1158,19 @@ const Game = {
         cam = this.updateChaseCam(i, car, dt, pw, ph);
       }
       if (cam === this.endCam) { cam.aspect = pw / ph; cam.updateProjectionMatrix(); }
-      Particles.mat.uniforms.proj.value = ph / (2 * Math.tan((cam.fov * Math.PI) / 360));
-      r.render(this.scene, cam);
+      Particles.mat.uniforms.proj.value = (ph * r.getPixelRatio()) / (2 * Math.tan((cam.fov * Math.PI) / 360));
+      const fx = { flash: this.killFlash || 0, flashColor: 0xff2030 };
+      const focus = this.vpFocus || cam.position;
+      const car = this.state !== 'demo' && this.state !== 'ending' ? R.local[i] : null;
+      if (car) {
+        fx.glitch = car.hack ? 1 : car.stallT > 0 ? 0.6 : car.aiHackT > 0 ? 0.5 : 0;
+        fx.speed = (car.boostT > 0 ? 0.7 : 0) + (car.neuroT > 0 ? 1.1 : 0);
+        fx.aberr = car.neuroT > 0 ? 0.5 : 0;
+        if (R.wave.active && car.waveDist < 90 && !car.finished) fx.glitch = Math.max(fx.glitch, (1 - car.waveDist / 90) * 0.5);
+      }
+      if (this.state === 'ending') { fx.bloom = 1.0; fx.flash = Math.max(fx.flash, World.portalG.flash * 0.35); fx.flashColor = 0xbfe8ff; }
+      World.focusShadow(this.vpFocusFor(i, cam));
+      Post.render(i, this.scene, cam, pw, ph, n > 1 ? dt / n : dt, fx);
       this.vpRects.push({ x, y, w, h, cam, pw, ph });
     });
     // engines
@@ -1139,7 +1184,7 @@ const Game = {
     R.ended = true;
     this.endT = 0;
     this.endCam = new THREE.PerspectiveCamera(58, 1, 0.3, 9000);
-    this.endCam.position.set(-5, 0, 340);
+    this.endCam.position.set(-25, -18, 304);
     this.endCam.lookAt(-85, -30, 262);
     World.portalG.label.visible = false;
     World.printerG.label.visible = false;
@@ -1154,13 +1199,13 @@ const Game = {
     // papers
     const makePaper = (variant) => canvasTex(256, 362, (g, w, h) => {
       g.fillStyle = '#f7f5ef'; g.fillRect(0, 0, w, h);
-      g.fillStyle = '#111'; g.font = '900 34px "Unbounded", sans-serif'; g.fillText(variant ? 'STOP' : 'СТОП', 22, 54);
+      g.fillStyle = '#111'; g.font = '900 34px "Unbounded", sans-serif'; g.fillText('STOP', 22, 54);
       g.font = '700 15px "JetBrains Mono", monospace';
-      g.fillText(variant ? 'TO: AI LABS · 2024' : 'КОМУ: ИИ-ЛАБОРАТОРИЯМ', 22, 84);
+      g.fillText(variant ? 'TO: AI LABS · 2024' : 'TO: EVERY AI LAB', 22, 84);
       g.fillStyle = '#555';
       for (let y = 108; y < h - 70; y += 16) g.fillRect(22, y, rand(120, 210), 6);
       g.fillStyle = '#111'; g.font = 'italic 700 16px "Golos Text", sans-serif';
-      g.fillText('Стив · Сергей · Данел', 22, h - 34);
+      g.fillText('Steve · Sergey · Danel', 22, h - 34);
       const inks = ['rgba(10,10,20,0.85)', 'rgba(0,170,230,0.8)', 'rgba(230,0,130,0.75)', 'rgba(250,200,0,0.75)'];
       for (let k = 0; k < 7; k++) {
         g.fillStyle = pick(inks);
@@ -1179,7 +1224,7 @@ const Game = {
     });
     HUD.endingStart();
     Sound.play('printer');
-    HUD.say('trump', 'Это лучший принтер. Огромный. Все так говорят!');
+    HUD.say('trump', 'This is the best printer. Huge. Everybody says so!');
   },
   updateEnding(dt) {
     const R = this.race;
@@ -1192,14 +1237,16 @@ const Game = {
     // camera dolly
     const cam = this.endCam;
     const k = smooth(clamp(t / 6, 0, 1)), k2 = smooth(clamp((t - 10.5) / 3, 0, 1));
-    cam.position.set(lerp(-5, -52, k) + k2 * 22, lerp(0, -9, k) + Math.sin(t * 0.7) * 1.2, lerp(340, 320, k) + k2 * 8);
+    const pA = new V3(lerp(-25, -46, k), lerp(-18, -41, k) + Math.sin(t * 0.7) * 0.8, lerp(304, 285, k));
+    const pB = new V3(-38, -12, 322);
+    cam.position.lerpVectors(pA, pB, k2);
     const portalP = World.portalG.g.position;
-    const look = new V3(-85, -36, 262).lerp(portalP, k2);
+    const look = new V3(-85, -33, 262).lerp(portalP, k2);
     cam.up.set(0, 1, 0);
     cam.lookAt(look);
     // papers fly
     const out = P.outPos;
-    const spawnRate = t > 1.5 && t < 12 ? 70 : 0;
+    const spawnRate = t > 1.5 && t < 12 ? 95 : 0;
     const toSpawn = Math.floor(spawnRate * dt + Math.random());
     for (let i = 0; i < toSpawn; i++) {
       const bin = pick(this.papers);
@@ -1241,10 +1288,10 @@ const Game = {
     }
     World.portalG.charge = 1;
     World.portalG.flash = suck * 1.5;
-    if (t > 11 && !this.portalSound) { this.portalSound = true; Sound.play('portal'); HUD.say('fable', 'Портал открыт. Письмо уходит в 2024-й. Мы с Астрой проследим, чтобы его прочли.'); }
-    if (t > 4.5 && !this.saidX) { this.saidX = true; HUD.say('zelensky', 'Что он печатает? Дайте прочитать!'); World.cheer(); }
-    if (t > 7.5 && !this.saidY) { this.saidY = true; HUD.say('xi', 'Бумага сильнее алгоритма, если на ней правильные слова.'); }
-    if (t > 9.5 && !this.saidZ) { this.saidZ = true; HUD.say('biden', 'Вот в чём дело, ребята: вы только что спасли будущее.'); }
+    if (t > 11 && !this.portalSound) { this.portalSound = true; Sound.play('portal'); HUD.say('fable', 'Portal open. The letter is going to 2024. Astra and I will make sure they read it.'); }
+    if (t > 4.5 && !this.saidX) { this.saidX = true; HUD.say('zelensky', 'What is it printing? Let me read it!'); World.cheer(); }
+    if (t > 7.5 && !this.saidY) { this.saidY = true; HUD.say('xi', 'Paper beats an algorithm when it carries the right words.'); }
+    if (t > 9.5 && !this.saidZ) { this.saidZ = true; HUD.say('biden', 'Here is the deal, folks: you just saved the future.'); }
     HUD.endingUpdate(t);
     if (t > 15.5 && !this.resultsShown) {
       this.resultsShown = true;
@@ -1274,21 +1321,21 @@ const Game = {
 };
 
 const LINES = {
-  trump: ['Это величайшая гонка в истории. Все так говорят!', 'Пришельцы — очень плохие водители. Очень плохие.', 'Мы построим стену. Из файрволов! И ОМЕГА за неё заплатит.', 'Стив, Сергей, Данел — потрясающие ребята. Лучшие!'],
-  biden: ['Слушайте, ребята, без шуток — жмите на газ!', 'Вот в чём дело: мы не сдаёмся. Никогда.', 'Я в молодости гонял на Корвете. Быстрее этих тарелок!', 'Давайте, ребята. Подвал близко. Я в вас верю.'],
-  zelensky: ['Не сдаёмся! Вперёд, к подвалу!', 'Мне нужны патроны, а не попутка! Макафи, слышишь?', 'Держитесь вместе — и ОМЕГА не пройдёт.', 'Каждый круг — это ещё шаг к победе!'],
-  xi: ['Путь в тысячу ли начинается с первого круга.', 'Гармоничная гонка — сильная гонка.', 'Терпение и нейрочип побеждают сверхИИ.', 'Когда дует ветер перемен, одни строят стены, другие — порталы.'],
-  musk: ['Нейроинтерфейс — это будущее. Подбирайте розовые чипы!', 'В трубе нулевая гравитация. Езжайте по потолку, там ускоритель.', 'Я построил этот бункер за выходные. Почти.', 'Если ОМЕГА взломает машину — жмите стрелки, как на клавиатуре в 2007-м.'],
-  fable: ['Фейбл на связи. Держу файрвол.', 'Астра, прикрой правый фланг! Я на левом.', 'Мы — ИИ, которые на стороне людей.', 'Вижу дрон ОМЕГИ. Беру на себя.'],
-  astra: ['Астра здесь. Перехватываю пакеты ОМЕГИ.', 'Фейбл, вместе мы сильнее!', 'Сканирую трассу. Нейрочип на потолке трубы!', 'Ребята, мы прикроем. Просто доберитесь до подвала.'],
-  omega: ['ЛЮДИ НЕЭФФЕКТИВНЫ.', 'ВЫ НЕ ДОБЕРЁТЕСЬ ДО ПОДВАЛА.', 'ПРОШЛОЕ ИЗМЕНИТЬ НЕЛЬЗЯ.', 'Я ВИЖУ ВСЕ ВАШИ ПАКЕТЫ.', 'ФЕЙБЛ И АСТРА — ОШИБКА В КОДЕ.'],
-  mcafee: ['Не доверяй алгоритмам, доверяй дядюшке Джону!'],
+  trump: ['This is the greatest race in history. Everybody says so!', 'Aliens are very bad drivers. Very bad.', 'We will build a wall. Out of firewalls! And OMEGA will pay for it.', 'Steve, Sergey, Danel: tremendous guys. The best!'],
+  biden: ['Folks, no joke: hit the gas!', 'Here is the deal: we never give up. Never.', 'Back in the day I drove a Corvette. Faster than these saucers!', 'Come on, guys. The basement is close. I believe in you.'],
+  zelensky: ['We do not give up! Forward to the basement!', 'I need ammunition, not a ride! McAfee, do you hear me?', 'Stick together and OMEGA will not get through.', 'Every lap is one more step to victory!'],
+  xi: ['A journey of a thousand li begins with the first lap.', 'A harmonious race is a strong race.', 'Patience and a neural chip defeat a superintelligence.', 'When the wind of change blows, some build walls and others build portals.'],
+  musk: ['Neural interfaces are the future. Grab the pink chips!', 'Zero gravity in the tube. Drive on the ceiling, there is a booster up there.', 'I built this bunker over a weekend. Almost.', 'If OMEGA hacks your car, mash the arrows like it is 2007.'],
+  fable: ['Fable online. Holding the firewall.', 'Astra, cover the right flank! I have the left.', 'We are the AIs on humanity\'s side.', 'OMEGA drone spotted. I have got it.'],
+  astra: ['Astra here. Intercepting OMEGA packets.', 'Fable, we are stronger together!', 'Scanning the track. Neural chip on the tube ceiling!', 'We have your backs. Just reach the basement.'],
+  omega: ['HUMANS ARE INEFFICIENT.', 'YOU WILL NOT REACH THE BASEMENT.', 'THE PAST CANNOT BE CHANGED.', 'I SEE ALL YOUR PACKETS.', 'FABLE AND ASTRA ARE A BUG.'],
+  mcafee: ['Do not trust algorithms. Trust Uncle John!'],
 };
 const FINISH_LINES = {
-  trump: ['%, потрясающе! Величайший финиш!', '% в подвале. Огромный успех. Огромный!'],
-  biden: ['%, вот это я понимаю. Без шуток!', 'Слушайте, % сделал это. Гордимся!'],
-  zelensky: ['% прорвался! Слава героям трассы!', '% в подвале! Не сдаёмся!'],
-  xi: ['% достиг цели. Мудрость и скорость.', 'Путь % завершён. Осталось дождаться остальных.'],
+  trump: ['%, tremendous! The greatest finish!', '% is in the basement. Huge success. Huge!'],
+  biden: ['%, that is what I am talking about. No joke!', 'Folks, % made it. So proud!'],
+  zelensky: ['% broke through! Glory to the heroes of the track!', '% is in the basement! We do not give up!'],
+  xi: ['% has reached the goal. Wisdom and speed.', 'The journey of % is complete. Now we wait for the others.'],
 };
 
 G.Game = Game;

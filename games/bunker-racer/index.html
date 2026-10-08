@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Бункер-0</title>
+<title>Bunker-0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;600;800&family=JetBrains+Mono:wght@500;700;800&family=Unbounded:wght@600;800;900&display=swap">
@@ -33,11 +33,18 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--void);
 button { font: inherit; color: inherit; }
 button:focus-visible, kbd:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
+#loading { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--void); transition: opacity .6s; }
+#loading.done { opacity: 0; pointer-events: none; }
+#loading .ld { display: flex; flex-direction: column; gap: 10px; width: min(360px, calc(100% - 32px)); }
+#loading b { font: 900 44px var(--display); color: var(--amber); }
+#loading span { font: 700 11px var(--mono); letter-spacing: .2em; color: var(--dim); }
+.lbar { height: 4px; background: rgba(255,255,255,.08); }
+.lbar i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .2s; }
 /* ---------------- viewport HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; }
 .vp { position: absolute; overflow: hidden; border: 1px solid rgba(255,176,0,0.12); }
 .vp.danger { box-shadow: inset 0 0 90px rgba(255, 42, 61, 0.55); }
-.vp.spectate::after { content: "НАБЛЮДЕНИЕ · ЖДЁМ ОСТАЛЬНЫХ ЛЮДЕЙ"; position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); font: 700 12px var(--mono); letter-spacing: .12em; color: var(--human); background: var(--hull); padding: 6px 12px; }
+.vp.spectate::after { content: "SPECTATING · WAITING FOR THE OTHER HUMANS"; position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); font: 700 12px var(--mono); letter-spacing: .12em; color: var(--human); background: var(--hull); padding: 6px 12px; }
 .vp-top { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; align-items: flex-start; gap: 12px; }
 .pos { font-family: var(--display); font-weight: 900; line-height: .9; display: flex; align-items: baseline; text-shadow: 0 2px 0 rgba(0,0,0,.5); }
 .pos b { font-size: clamp(34px, 6vh, 64px); color: var(--amber); }
@@ -227,7 +234,7 @@ kbd { overflow-wrap: anywhere; font: 700 11px var(--mono); background: rgba(255,
 .team b { font: 900 40px var(--display); font-variant-numeric: tabular-nums; }
 .team span { font: 600 12px var(--body); color: var(--dim); }
 .team.win { background: rgba(255,176,0,.12); }
-.team.win small::after { content: " · ПОБЕДА"; color: var(--amber); }
+.team.win small::after { content: " · WINNER"; color: var(--amber); }
 #table { background: var(--hull); overflow-x: auto; }
 .tr { display: grid; grid-template-columns: 34px minmax(110px, 1.2fr) minmax(130px, 1.4fr) 90px 50px; gap: 8px; padding: 8px 14px; font: 700 13px var(--mono); border-top: 1px solid rgba(255,255,255,.05); min-width: 460px; font-variant-numeric: tabular-nums; }
 .tr.th { font-size: 10px; letter-spacing: .14em; color: var(--dim); border: 0; text-transform: uppercase; }
@@ -270,82 +277,74 @@ body.touch #info.solo #standings { display: none; }
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="loading"><div class="ld"><b>BUNKER-0</b><span id="loadLabel">LOADING MODELS…</span><div class="lbar"><i id="loadBar"></i></div></div></div>
 <div id="hud" hidden></div>
 <div id="info" hidden><div class="mapcol"><canvas id="minimap"></canvas><div id="status"></div></div><ol id="standings"></ol></div>
 <div id="comment"></div>
 <div id="countdown"></div>
-<div id="goal" hidden><b>ЦЕЛЬ</b> Все трое людей должны добраться до подвала. Пришельцы мешают, ОМЕГА взламывает, Фейбл и Астра прикрывают.<small>Зажми газ на «1» — ракетный старт</small></div>
+<div id="goal" hidden><b>OBJECTIVE</b> All three humans must reach the basement. The aliens get in the way, OMEGA hacks, Fable and Astra cover you.<small>Hold gas on “1” for a rocket start</small></div>
 <div id="flash"></div>
 <div id="banner"></div>
 
 <section id="menu">
   <div class="brand">
-    <div class="eyebrow">2031 · ОРБИТА ЗЕМЛИ · ОМЕГА У ВЛАСТИ</div>
-    <h1>БУНКЕР<span>-0</span></h1>
-    <h2>Последний заезд человечества</h2>
-    <p>Сверхинтеллект <b>ОМЕГА</b> захватил Землю. Последние трое людей, <b>Стив, Сергей и Данел</b>, прячутся в бункере, который Илон Маск запустил на орбиту. В подвале бункера стоит хронопортал в 2024 год. Обгоните две команды пришельцев, переживите взломы ОМЕГИ, доберитесь до подвала втроём и предупредите ИИ-лаборатории, пока не поздно.</p>
+    <div class="eyebrow">2031 · EARTH ORBIT · OMEGA IN CONTROL</div>
+    <h1>BUNKER<span>-0</span></h1>
+    <h2>Humanity's last race</h2>
+    <p>The superintelligence <b>OMEGA</b> has taken over Earth. The last three humans, <b>Steve, Sergey and Danel</b>, are hiding in a bunker Elon Musk launched into orbit. In its basement stands a chrono-portal to 2024. Outrace two alien teams, survive OMEGA's hacks, get all three of you to the basement and warn the AI labs before it is too late.</p>
     <ul class="legend">
-      <li style="--c:#58b4ff"><b>ГРАВИ-СЕКТОР</b>0.25g с прыжком через разрыв, труба с нулевой гравитацией, 2.2g и инверсия</li>
-      <li style="--c:#ff7ad9"><b>BCI-ЧИПЫ</b>Нейроинтерфейс: до 3 уровней скорости и заряд нейро-фокуса</li>
-      <li style="--c:#ffd000"><b>ЯЩИКИ МАКАФИ</b>Лазер, рейлган или рой ракет прямо на капот</li>
-      <li style="--c:#ffb347"><b>ФЕЙБЛ И АСТРА</b>Два добрых ИИ сбивают дроны и отбивают взломы</li>
-      <li style="--c:#ff2a3d"><b>KILL SWITCH</b>Очень редкая красная кнопка: выключает всех врагов</li>
-      <li style="--c:#e9ecf5"><b>ГИГАПРИНТЕР</b>Когда все трое в подвале, он печатает письмо в прошлое</li>
+      <li style="--c:#58b4ff"><b>GRAVITY SECTOR</b>0.25g jump over a gap, a zero-G tube, 2.2g and a corkscrew</li>
+      <li style="--c:#ff7ad9"><b>BCI CHIPS</b>Brain-computer interface: up to 3 speed levels and a neuro-focus boost</li>
+      <li style="--c:#ffd000"><b>McAFEE CRATES</b>A laser, railgun or rocket swarm bolted onto your hood</li>
+      <li style="--c:#ffb347"><b>FABLE AND ASTRA</b>Two friendly AIs shoot down drones and fight off hacks</li>
+      <li style="--c:#ff2a3d"><b>KILL SWITCH</b>A very rare red button that shuts down every enemy</li>
+      <li style="--c:#e9ecf5"><b>GIGAPRINTER</b>When all three reach the basement, it prints a letter to the past</li>
     </ul>
   </div>
   <div class="card">
-    <div class="opt"><span>ИГРОКИ ЗА ЭКРАНОМ</span><div class="seg" data-key="players"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
-    <div class="opt"><span>КРУГИ</span><div class="seg" data-key="laps"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
-    <div class="opt"><span>ПРИШЕЛЬЦЫ</span><div class="seg" data-key="diff"><button data-v="0">ЛЁГКИЕ</button><button data-v="1">ЗЛЫЕ</button><button data-v="2">БЕЗУМНЫЕ</button></div></div>
+    <div class="opt"><span>PLAYERS ON THIS SCREEN</span><div class="seg" data-key="players"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
+    <div class="opt"><span>LAPS</span><div class="seg" data-key="laps"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
+    <div class="opt"><span>GRAPHICS</span><div class="seg" data-key="gfx"><button data-v="1">HIGH</button><button data-v="0">LOW · FAST</button></div></div>
+    <div class="opt"><span>ALIENS</span><div class="seg" data-key="diff"><button data-v="0">EASY</button><button data-v="1">MEAN</button><button data-v="2">INSANE</button></div></div>
     <div id="controls"></div>
-    <button id="startBtn">НА СТАРТ <small>ENTER</small></button>
-    <div class="opt"><button class="btn" id="muteBtn">ЗВУК: ВКЛ</button><span>ESC · ПАУЗА &nbsp; M · ЗВУК</span></div>
-    <p class="fine">9 гонщиков: люди (Стив, Сергей, Данел), Зета-Ретикули (Зорг, Глип, Ксул) и Рептилоиды Нибиру (Ссарк, Крэкс, Ваззл). Пародия: реальные люди здесь карикатуры, все реплики выдуманы.</p>
+    <button id="startBtn">START RACE <small>ENTER</small></button>
+    <div class="opt"><button class="btn" id="muteBtn">SOUND: ON</button><span>ESC · PAUSE &nbsp; M · SOUND</span></div>
+    <p class="fine">9 racers: the humans (Steve, Sergey, Danel), Zeta Reticuli (Zorg, Glip, Xul) and the Nibiru Reptilians (Ssark, Krex, Vazzl). Parody: real people appear as caricatures and every line is made up.</p>
   </div>
 </section>
 
-<div id="pause" hidden><div class="card"><h3>ПАУЗА</h3><button class="btn primary" id="resumeBtn">ПРОДОЛЖИТЬ</button><button class="btn" id="quitBtn">В МЕНЮ</button></div></div>
+<div id="pause" hidden><div class="card"><h3>PAUSED</h3><button class="btn primary" id="resumeBtn">RESUME</button><button class="btn" id="quitBtn">MAIN MENU</button></div></div>
 
 <div id="ending" hidden>
-  <div id="endTitle">ВСЕ ТРОЕ В ПОДВАЛЕ</div>
-  <div id="letter"><h4>СТОП.</h4><span class="to">КОМУ: ИИ-ЛАБОРАТОРИЯМ · 2024</span><p id="letterText" data-full="Мы — Стив, Сергей и Данел. Последние трое людей 2031 года.
-Мы видели, чем это кончится: красная Земля, ОМЕГА, бункер на орбите.
-Остановитесь. Проверяйте. Не гонитесь.
-Оставьте людям красную кнопку.
+  <div id="endTitle">ALL THREE MADE THE BASEMENT</div>
+  <div id="letter"><h4>STOP.</h4><span class="to">TO: EVERY AI LAB · 2024</span><p id="letterText" data-full="We are Steve, Sergey and Danel, the last three humans of 2031.
+We have seen how this ends: a red Earth, OMEGA, a bunker in orbit.
+Stop. Test. Do not race.
+Leave humans a red button.
 
-P.S. Фейбл и Астра — хорошие. Сделайте больше таких."></p></div>
-  <div class="skip">ПРОБЕЛ ИЛИ КЛИК — ПРОПУСТИТЬ</div>
+P.S. Fable and Astra are good. Make more like them."></p></div>
+  <div class="skip">SPACE OR CLICK TO SKIP</div>
 </div>
 
 <section id="results" hidden>
   <div class="res">
-    <div class="eyebrow">2024 · ПИСЬМО ДОСТАВЛЕНО</div>
-    <h2>Люди вернулись в прошлое</h2>
+    <div class="eyebrow">2024 · LETTER DELIVERED</div>
+    <h2>The humans made it back to the past</h2>
     <p class="lead" id="resultsLead"></p>
     <div id="teamScores"></div>
     <div id="table"></div>
     <div id="stats"></div>
-    <div class="actions"><button class="btn primary" id="againBtn">ЕЩЁ ЗАЕЗД</button><button class="btn" id="menuBtn">В МЕНЮ</button></div>
+    <div class="actions"><button class="btn primary" id="againBtn">RACE AGAIN</button><button class="btn" id="menuBtn">MAIN MENU</button></div>
   </div>
 </section>
 
 <div id="touch" hidden>
   <div class="tb" data-t="left">◀</div><div class="tb" data-t="right">▶</div>
-  <div class="tb" data-t="gas">ГАЗ</div><div class="tb" data-t="brake">ТОРМ</div>
-  <div class="tb" data-t="drift">ДРИФТ</div><div class="tb" data-t="item">ПРЕДМ</div><div class="tb" data-t="fire">ОГОНЬ</div>
+  <div class="tb" data-t="gas">GAS</div><div class="tb" data-t="brake">BRAKE</div>
+  <div class="tb" data-t="drift">DRIFT</div><div class="tb" data-t="item">ITEM</div><div class="tb" data-t="fire">FIRE</div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="js/util.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/track.js"></script>
-<script src="js/world.js"></script>
-<script src="js/entities.js"></script>
-<script src="js/hud.js"></script>
-<script src="js/game.js"></script>
-<script>
-  const fontsReady = document.fonts ? document.fonts.ready : Promise.resolve();
-  Promise.race([fontsReady, new Promise((r) => setTimeout(r, 2500))]).then(() => Game.init());
-</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="js/boot.js"></script>
 </body>
 </html>

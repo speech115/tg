@@ -105,6 +105,10 @@ const Track = {
     ];
   },
 
+  update(t) {
+    if (this.padMats) for (const m of this.padMats) m.uniforms.t.value = t;
+    if (this.glassMat) this.glassMat.uniforms.t.value = t;
+  },
   inBunker(s) {
     s = mod(s, this.L); const b = this.zones.bunker;
     return s > b[0] || s < b[1] - this.L;
@@ -199,50 +203,138 @@ const Track = {
       default: return [0.55, 0.85, 1.0];
     }
   },
-  roadTexture() {
-    return canvasTex(256, 256, (g, w, h) => {
-      g.fillStyle = '#121828'; g.fillRect(0, 0, w, h);
-      g.strokeStyle = 'rgba(140,180,255,0.10)'; g.lineWidth = 1;
-      for (let x = 0; x <= w; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
-      for (let y = 0; y <= h; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
-      // panel seams
-      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 126, w, 4);
-      // edge bands
-      for (let y = 0; y < h; y += 32) {
-        g.fillStyle = (y / 32) % 2 ? '#e8f4ff' : '#4a5a7a';
-        g.fillRect(2, y, 10, 32); g.fillRect(w - 12, y, 10, 32);
+  // Procedural PBR set for the road: albedo, normal (from a height field), roughness/metal, emissive line mask.
+  roadMaps() {
+    const S = 512;
+    const height = document.createElement('canvas'); height.width = height.height = S;
+    const hg = height.getContext('2d');
+    hg.fillStyle = '#808080'; hg.fillRect(0, 0, S, S);
+    const panels = [];
+    for (let y = 0; y < S; y += 128) for (let x = 24; x < S - 24; x += 116) panels.push([x, y, 112, 124]);
+    for (const [x, y, w, h] of panels) {
+      hg.fillStyle = `rgb(${130 + Math.random() * 20 | 0},${130 + Math.random() * 20 | 0},${130 + Math.random() * 20 | 0})`;
+      hg.fillRect(x + 3, y + 3, w - 6, h - 6);
+      hg.fillStyle = '#5a5a5a';
+      for (const [rx, ry] of [[x + 9, y + 9], [x + w - 9, y + 9], [x + 9, y + h - 9], [x + w - 9, y + h - 9]]) { hg.beginPath(); hg.arc(rx, ry, 3, 0, TAU); hg.fill(); }
+      hg.fillStyle = '#d0d0d0';
+      for (const [rx, ry] of [[x + 9, y + 9], [x + w - 9, y + 9], [x + 9, y + h - 9], [x + w - 9, y + h - 9]]) { hg.beginPath(); hg.arc(rx - 1, ry - 1, 1.6, 0, TAU); hg.fill(); }
+    }
+    // grip grating at the edges
+    hg.fillStyle = '#6a6a6a';
+    for (let y = 0; y < S; y += 8) { hg.fillRect(0, y, 22, 4); hg.fillRect(S - 22, y, 22, 4); }
+    const hd = hg.getImageData(0, 0, S, S).data;
+    const normal = document.createElement('canvas'); normal.width = normal.height = S;
+    const ng = normal.getContext('2d'); const nd = ng.createImageData(S, S);
+    const H = (x, y) => hd[(((y + S) % S) * S + ((x + S) % S)) * 4] / 255;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const dx = (H(x + 1, y) - H(x - 1, y)) * 3.0, dy = (H(x, y + 1) - H(x, y - 1)) * 3.0;
+      const l = Math.hypot(dx, dy, 1);
+      const i = (y * S + x) * 4;
+      nd.data[i] = (-dx / l * 0.5 + 0.5) * 255; nd.data[i + 1] = (dy / l * 0.5 + 0.5) * 255; nd.data[i + 2] = (1 / l * 0.5 + 0.5) * 255; nd.data[i + 3] = 255;
+    }
+    ng.putImageData(nd, 0, 0);
+    const albedo = canvasTex(S, S, (g) => {
+      g.fillStyle = '#20252f'; g.fillRect(0, 0, S, S);
+      for (const [x, y, w, h] of panels) {
+        const k = 30 + Math.random() * 14 | 0;
+        g.fillStyle = `rgb(${k},${k + 4},${k + 12})`; g.fillRect(x + 3, y + 3, w - 6, h - 6);
+        g.fillStyle = 'rgba(255,255,255,0.025)';
+        for (let i = 0; i < 40; i++) g.fillRect(x + Math.random() * w, y + Math.random() * h, Math.random() * 30, 1);
       }
-      g.fillStyle = 'rgba(200,230,255,0.6)';
-      g.fillRect(85, 0, 2, h); g.fillRect(169, 0, 2, h);
-      g.fillStyle = '#ffffff';
-      g.fillRect(126, 0, 4, 90); g.fillRect(126, 128, 4, 90);
+      for (let y = 0; y < S; y += 64) {
+        g.fillStyle = (y / 64) % 2 ? '#c9ccd4' : '#2c313c';
+        g.fillRect(0, y, 22, 64); g.fillRect(S - 22, y, 22, 64);
+      }
+      g.fillStyle = 'rgba(0,0,0,0.25)';
+      for (let i = 0; i < 18; i++) { g.beginPath(); g.ellipse(Math.random() * S, Math.random() * S, 20 + Math.random() * 50, 4 + Math.random() * 10, 0, 0, TAU); g.fill(); }
     }, { repeat: true });
+    const orm = canvasTex(S, S, (g) => {
+      g.fillStyle = 'rgb(0,170,190)'; g.fillRect(0, 0, S, S);
+      for (const [x, y, w, h] of panels) { g.fillStyle = `rgb(0,${120 + Math.random() * 50 | 0},${190 + Math.random() * 40 | 0})`; g.fillRect(x + 3, y + 3, w - 6, h - 6); }
+      g.fillStyle = 'rgb(0,220,40)'; g.fillRect(0, 0, 22, S); g.fillRect(S - 22, 0, 22, S);
+    }, { repeat: true, linear: true });
+    const emis = canvasTex(S, S, (g) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+      g.fillStyle = '#fff';
+      g.fillRect(24, 0, 3, S); g.fillRect(S - 27, 0, 3, S);
+      g.fillRect(S / 2 - 3, 0, 6, 180); g.fillRect(S / 2 - 3, 256, 6, 180);
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      for (let y = 20; y < S; y += 64) { g.fillRect(S * 0.27, y, 3, 26); g.fillRect(S * 0.73, y, 3, 26); }
+    }, { repeat: true });
+    const nt = new THREE.CanvasTexture(normal); nt.wrapS = nt.wrapT = THREE.RepeatWrapping; nt.colorSpace = THREE.NoColorSpace;
+    for (const t of [albedo, orm, emis, nt]) t.anisotropy = 8;
+    return { albedo, normal: nt, orm, emis };
+  },
+  zoneEmissive(m) {
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = 'attribute vec3 zoneTint;\nvarying vec3 vZoneTint;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vZoneTint = zoneTint;');
+      sh.fragmentShader = 'varying vec3 vZoneTint;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= vZoneTint;');
+    };
+    return m;
+  },
+  // sweep a (d, h) profile along the track; side = -1/1 mirrors d; ok(s) decides where it exists
+  sweep(profile, side, ok, step = 2) {
+    const pl = this.newPlace();
+    const pos = [], nrm = [], tint = [], idx = [];
+    const P = profile.length;
+    let rows = 0, prevOK = false;
+    for (let s = 0; s <= this.L + 0.01; s += step) {
+      const ss = s % this.L, here = ok(ss);
+      if (here) {
+        const hw = this.hw(ss);
+        const t = this.zoneTint(ss);
+        for (let k = 0; k < P; k++) {
+          const [dd, hh] = profile[k];
+          this.place(ss, side * (hw + dd), hh, pl);
+          pos.push(pl.p.x, pl.p.y, pl.p.z);
+          tint.push(t[0], t[1], t[2]);
+          const k2 = (k + 1) % P;
+          const ed = profile[k2][0] - dd, eh = profile[k2][1] - hh;
+          const nd = eh * side, nh = -ed;
+          const l = Math.hypot(nd, nh) || 1;
+          nrm.push((pl.side.x * nd + pl.up.x * nh) / l, (pl.side.y * nd + pl.up.y * nh) / l, (pl.side.z * nd + pl.up.z * nh) / l);
+        }
+        if (prevOK) {
+          const a0 = (rows - 1) * P, b0 = rows * P;
+          for (let k = 0; k < P - 1; k++) {
+            if (side > 0) idx.push(a0 + k, b0 + k, a0 + k + 1, a0 + k + 1, b0 + k, b0 + k + 1);
+            else idx.push(a0 + k, a0 + k + 1, b0 + k, a0 + k + 1, b0 + k + 1, b0 + k);
+          }
+        }
+        rows++;
+      }
+      prevOK = here;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('zoneTint', new THREE.Float32BufferAttribute(tint, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(tint, 3));
+    geo.setIndex(idx);
+    return geo;
   },
 
   buildMeshes(scene) {
     const N = this.N, M = 28, R = this.R;
     const pl = this.newPlace();
-    const pos = [], col = [], uv = [], idx = [];
-    const upos = [], uidx = [];
+    const pos = [], nrm = [], tint = [], uv = [], idx = [];
+    const upos = [], unrm = [], uidx = [];
     const rowOK = [];
     for (let i = 0; i <= N; i++) {
       const s = (i % N) * this.DS, sv = i * this.DS;
       const hw = this.hw(s);
-      const tint = this.zoneTint(s);
+      const t = this.zoneTint(s);
       const b = this.tubeB(s);
       for (let j = 0; j <= M; j++) {
         const d = -hw + (2 * hw * j) / M;
         this.place(s, d, 0, pl);
         pos.push(pl.p.x, pl.p.y, pl.p.z);
-        const edge = j === 0 || j === M ? 1.0 : 1;
-        col.push(tint[0] * edge, tint[1] * edge, tint[2] * edge);
+        nrm.push(pl.up.x, pl.up.y, pl.up.z);
+        tint.push(t[0], t[1], t[2]);
         uv.push(d / this.W + 0.5, sv / 24);
-        if (b < 0.5) {
-          this.place(s, d * 1.02, -0.9, pl);
-        } else {
-          this.place(s, d, -0.8, pl);
-        }
+        this.place(s, b < 0.5 ? d * 1.02 : d, b < 0.5 ? -0.9 : -0.8, pl);
         upos.push(pl.p.x, pl.p.y, pl.p.z);
+        unrm.push(-pl.up.x, -pl.up.y, -pl.up.z);
       }
       rowOK[i] = !this.isGap(s);
     }
@@ -255,83 +347,110 @@ const Track = {
         if (!tubeRow) uidx.push(a, b, c, b, d, c);
       }
     }
+    const maps = this.roadMaps();
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('zoneTint', new THREE.Float32BufferAttribute(tint, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
-    const road = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: this.roadTexture(), vertexColors: true, side: THREE.DoubleSide }));
+    const roadMat = this.zoneEmissive(new THREE.MeshStandardMaterial({
+      map: maps.albedo, normalMap: maps.normal, normalScale: new THREE.Vector2(0.9, 0.9),
+      roughnessMap: maps.orm, metalnessMap: maps.orm, roughness: 1, metalness: 1,
+      emissiveMap: maps.emis, emissive: 0xffffff, emissiveIntensity: 2.0, side: THREE.DoubleSide, envMapIntensity: 0.55,
+    }));
+    const road = new THREE.Mesh(geo, roadMat);
+    road.receiveShadow = true;
     scene.add(road);
+    this.roadMesh = road;
     const ugeo = new THREE.BufferGeometry();
     ugeo.setAttribute('position', new THREE.Float32BufferAttribute(upos, 3));
+    ugeo.setAttribute('normal', new THREE.Float32BufferAttribute(unrm, 3));
     ugeo.setIndex(uidx);
-    scene.add(new THREE.Mesh(ugeo, new THREE.MeshBasicMaterial({ color: 0x0a0d18, side: THREE.DoubleSide })));
+    const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1a1e27, metalness: 0.85, roughness: 0.45, side: THREE.DoubleSide });
+    scene.add(new THREE.Mesh(ugeo, darkMetal));
 
-    // force-field walls along the edges (not in the tube or the gap)
-    const wallTex = canvasTex(4, 64, (g, w, h) => {
+    // barriers: metal rail with a glowing strip and a faint force field above
+    const flat = (s) => this.tubeB(s) < 0.01 && !this.isGap(s);
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x4a5262, metalness: 0.9, roughness: 0.3, envMapIntensity: 1.2 });
+    const railProfile = [[-0.05, 0], [-0.05, 0.85], [0.15, 1.1], [0.65, 1.1], [0.75, 0.6], [0.75, -0.9], [0.3, -1.2]];
+    const stripProfile = [[-0.07, 0.62], [-0.07, 0.78]];
+    const stripMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(3, 3, 3), side: THREE.DoubleSide });
+    const fieldTex = canvasTex(64, 128, (g, w, h) => {
       const gr = g.createLinearGradient(0, h, 0, 0);
-      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.08, 'rgba(255,255,255,0.9)');
-      gr.addColorStop(0.12, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.15, 'rgba(255,255,255,0.25)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
-    });
+      g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1;
+      for (let y = 0; y < h; y += 16) for (let x = (y / 16) % 2 ? 8 : 0; x < w; x += 16) { g.beginPath(); for (let k = 0; k < 7; k++) { const a = k / 6 * TAU; g.lineTo(x + Math.cos(a) * 7, y + Math.sin(a) * 7); } g.stroke(); }
+    }, { repeat: true, linear: true });
+    const fieldMat = new THREE.MeshBasicMaterial({ map: fieldTex, vertexColors: true, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     for (const side of [-1, 1]) {
-      const wp = [], wc = [], wu = [], wi = [];
-      let v = 0;
-      for (let i = 0; i <= N; i++) {
-        const s = (i % N) * this.DS;
-        const ok = this.tubeB(s) < 0.01 && !this.isGap(s);
-        const tint = this.zoneTint(s);
-        const hw = this.hw(s) * side;
-        this.place(s, hw, 0, pl); wp.push(pl.p.x, pl.p.y, pl.p.z);
-        this.place(s, hw, 3.2, pl); wp.push(pl.p.x, pl.p.y, pl.p.z);
-        const k = ok ? 1 : 0;
-        wc.push(tint[0] * k, tint[1] * k, tint[2] * k, tint[0] * k, tint[1] * k, tint[2] * k);
-        wu.push(i / 4, 0, i / 4, 1);
-        if (i < N) { wi.push(v, v + 2, v + 1, v + 1, v + 2, v + 3); }
-        v += 2;
-      }
-      const wg = new THREE.BufferGeometry();
-      wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3));
-      wg.setAttribute('color', new THREE.Float32BufferAttribute(wc, 3));
-      wg.setAttribute('uv', new THREE.Float32BufferAttribute(wu, 2));
-      wg.setIndex(wi);
-      scene.add(new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ map: wallTex, vertexColors: true, transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
+      const rail = new THREE.Mesh(this.sweep(railProfile, side, flat), railMat);
+      rail.receiveShadow = true; scene.add(rail);
+      scene.add(new THREE.Mesh(this.sweep(stripProfile, side, flat), stripMat));
+      const fgeo = this.sweep([[0.3, 1.1], [0.3, 4.2]], side, flat);
+      const n = fgeo.attributes.position.count, fuv = [];
+      for (let k = 0; k < n; k++) fuv.push(Math.floor(k / 2) * 0.12, k % 2);
+      fgeo.setAttribute('uv', new THREE.Float32BufferAttribute(fuv, 2));
+      const fm = new THREE.Mesh(fgeo, fieldMat); scene.add(fm); (this.fieldMeshes = this.fieldMeshes || []).push(fm);
     }
-
-    // beacon lights under the road edges
-    const bp = [], bc = [];
-    for (let s = 0; s < this.L; s += 14) {
-      if (this.tubeB(s) > 0.01 || this.isGap(s)) continue;
-      const tint = this.zoneTint(s);
+    // support structure: two longitudinal girders, cross beams and anti-grav pods
+    const under = (s) => this.tubeB(s) < 0.3 && !this.isGap(s) && !this.inBunker(s);
+    for (const side of [-1, 1]) {
+      const gp = [[-8.6, -1.0], [-8.6, -2.6], [-7.4, -2.6], [-7.4, -1.0]].map(([d, h]) => [d * -1 - this.HW, h]);
+      scene.add(new THREE.Mesh(this.sweep(gp, side, under, 4), darkMetal));
+    }
+    const beams = [];
+    for (let s = 0; s < this.L; s += 10) if (under(s)) beams.push(s);
+    const beamGeo = new THREE.BoxGeometry(17, 0.5, 0.7);
+    const beamIM = new THREE.InstancedMesh(beamGeo, darkMetal, beams.length);
+    const podGeo = new THREE.CylinderGeometry(0.9, 0.6, 1.6, 12);
+    const podMat = new THREE.MeshStandardMaterial({ color: 0x2a3040, metalness: 0.9, roughness: 0.3, emissive: 0x3a9bff, emissiveIntensity: 0.0 });
+    const pods = beams.filter((s, i) => i % 4 === 0);
+    const podIM = new THREE.InstancedMesh(podGeo, podMat, pods.length * 2);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new V3(1, 1, 1);
+    const glowP = [], glowC = [];
+    beams.forEach((s, i) => {
+      const f = this.frame(s);
+      m4.makeBasis(f.B, f.U, f.T.clone().negate()); q.setFromRotationMatrix(m4);
+      const p = f.P.clone().addScaledVector(f.U, -1.8);
+      m4.compose(p, q, one); beamIM.setMatrixAt(i, m4);
+    });
+    pods.forEach((s, i) => {
+      const f = this.frame(s);
+      m4.makeBasis(f.B, f.U, f.T.clone().negate()); q.setFromRotationMatrix(m4);
       for (const side of [-1, 1]) {
-        this.place(s, this.HW * side * 1.05, -1.2, pl);
-        bp.push(pl.p.x, pl.p.y, pl.p.z); bc.push(tint[0], tint[1], tint[2]);
+        const p = f.P.clone().addScaledVector(f.B, side * 8).addScaledVector(f.U, -3.4);
+        m4.compose(p, q, one); podIM.setMatrixAt(i * 2 + (side > 0 ? 1 : 0), m4);
+        const gpos = p.clone().addScaledVector(f.U, -1.4);
+        glowP.push(gpos.x, gpos.y, gpos.z);
+        const t = this.zoneTint(s); glowC.push(t[0] * 1.5, t[1] * 1.5, t[2] * 1.5);
       }
-    }
-    const bg = new THREE.BufferGeometry();
-    bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
-    bg.setAttribute('color', new THREE.Float32BufferAttribute(bc, 3));
-    scene.add(new THREE.Points(bg, new THREE.PointsMaterial({ size: 4, map: GLOW_TEX, vertexColors: true,
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+    });
+    scene.add(beamIM); scene.add(podIM);
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute('position', new THREE.Float32BufferAttribute(glowP, 3));
+    gg.setAttribute('color', new THREE.Float32BufferAttribute(glowC, 3));
+    scene.add(new THREE.Points(gg, new THREE.PointsMaterial({ size: 7, map: GLOW_TEX, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
 
-    // tube rings
+    // tube: ring lights and a hex-glass shell with a fresnel glow
     const z = this.zones;
-    const ringMat = glowMat(0xc070ff, 0.9);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x30283a, metalness: 0.9, roughness: 0.3 });
+    const ringGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xc070ff).multiplyScalar(3) });
     for (let s = z.tube[0] + 34; s < z.tube[1] - 30; s += 22) {
       const f = this.frame(s);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.9, 0.35, 6, 40), ringMat);
-      ring.position.copy(f.P).addScaledVector(f.U, R);
-      ring.lookAt(ring.position.clone().add(f.T));
-      scene.add(ring);
+      const c = f.P.clone().addScaledVector(f.U, R);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 1.4, 0.7, 8, 48), ringMat);
+      ring.position.copy(c); ring.lookAt(c.clone().add(f.T)); scene.add(ring);
+      const glow = new THREE.Mesh(new THREE.TorusGeometry(R + 0.75, 0.16, 6, 48), ringGlow);
+      glow.position.copy(c); glow.lookAt(c.clone().add(f.T)); scene.add(glow);
     }
-    // glass shell around the tube
     {
-      const gp = [], gi = []; const MM = 32; let rows = 0;
-      for (let s = z.tube[0] + 30; s <= z.tube[1] - 30; s += 4) {
+      const gp = [], gn = [], gu = [], gi = []; const MM = 40; let rows = 0;
+      for (let s = z.tube[0] + 30; s <= z.tube[1] - 30; s += 3) {
         for (let j = 0; j <= MM; j++) {
-          this.place(s, -Math.PI * R + (TAU * R * j) / MM, -1.5, pl);
-          gp.push(pl.p.x, pl.p.y, pl.p.z);
+          this.place(s, -Math.PI * R + (TAU * R * j) / MM, -1.6, pl);
+          gp.push(pl.p.x, pl.p.y, pl.p.z); gn.push(-pl.up.x, -pl.up.y, -pl.up.z); gu.push(j / MM * 8, s / 12);
         }
         rows++;
       }
@@ -339,11 +458,23 @@ const Track = {
         const a = r * (MM + 1) + j, b = a + 1, c = a + MM + 1, d = c + 1;
         gi.push(a, c, b, b, c, d);
       }
-      const gg = new THREE.BufferGeometry();
-      gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
-      gg.setIndex(gi);
-      scene.add(new THREE.Mesh(gg, new THREE.MeshBasicMaterial({ color: 0x8040ff, transparent: true, opacity: 0.12,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, wireframe: true })));
+      const geo2 = new THREE.BufferGeometry();
+      geo2.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
+      geo2.setAttribute('normal', new THREE.Float32BufferAttribute(gn, 3));
+      geo2.setAttribute('uv', new THREE.Float32BufferAttribute(gu, 2));
+      geo2.setIndex(gi);
+      this.glassMat = new THREE.ShaderMaterial({
+        uniforms: { t: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+        vertexShader: 'varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vec4 wp = modelMatrix * vec4(position,1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); gl_Position = projectionMatrix * viewMatrix * wp; }',
+        fragmentShader: `uniform float t; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+          float hex(vec2 p){ p.x *= 1.1547; p.y += mod(floor(p.x), 2.0) * 0.5; p = abs(fract(p) - 0.5); return abs(max(p.x * 1.5 + p.y, p.y * 2.0) - 1.0); }
+          void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
+            float h = smoothstep(0.08, 0.0, hex(vUv * 3.0));
+            float sweep = smoothstep(0.9, 1.0, sin(vUv.y * 0.8 - t * 3.0));
+            vec3 c = vec3(0.55, 0.3, 1.0) * (0.06 + f * 0.5 + h * (0.25 + sweep * 1.5));
+            gl_FragColor = vec4(c, 1.0); }`,
+      });
+      scene.add(new THREE.Mesh(geo2, this.glassMat));
     }
 
     // zone gates
@@ -359,11 +490,11 @@ const Track = {
       g.quaternion.setFromRotationMatrix(m);
       scene.add(g);
     };
-    gate(z.lowg[0], 0x58b4ff, 'НИЗКАЯ ГРАВИТАЦИЯ 0.25g');
-    gate(z.tube[0] - 4, 0xc070ff, 'НУЛЕВАЯ ГРАВИТАЦИЯ · ЕЗДА ПО СТЕНАМ');
-    gate(z.heavy[0], 0xff8a3d, 'ТЯЖЁЛАЯ ГРАВИТАЦИЯ 2.2g');
-    gate(z.cork[0] - 6, 0xff5a2a, 'ИНВЕРСИЯ');
-    gate(this.gap[0] - 25, 0xffb000, 'ПРЫГАЙ! РАЗРЫВ ТРАССЫ');
+    gate(z.lowg[0], 0x58b4ff, 'LOW GRAVITY 0.25g');
+    gate(z.tube[0] - 4, 0xc070ff, 'ZERO GRAVITY · DRIVE ON THE WALLS');
+    gate(z.heavy[0], 0xff8a3d, 'HEAVY GRAVITY 2.2g');
+    gate(z.cork[0] - 6, 0xff5a2a, 'INVERSION');
+    gate(this.gap[0] - 25, 0xffb000, 'JUMP! TRACK GAP');
 
     // pads
     const padTex = canvasTex(128, 128, (g, w, h) => {
@@ -390,8 +521,18 @@ const Track = {
       const m = new THREE.Mesh(qg, material); scene.add(m); return m;
     };
     this.surfQuad = surfQuad;
-    const jumpMat = new THREE.MeshBasicMaterial({ map: padTex, color: 0x5fd0ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-    const boostMat = new THREE.MeshBasicMaterial({ map: padTex, color: 0xffb000, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const padMat = (color, rows) => new THREE.ShaderMaterial({
+      uniforms: { t: { value: 0 }, color: { value: new THREE.Color(color).multiplyScalar(3) }, rows: { value: rows } },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `uniform float t; uniform vec3 color; uniform float rows; varying vec2 vUv;
+        void main(){ float y = fract(vUv.y * rows - t * 2.5 + abs(vUv.x - 0.5) * 1.2);
+          float chev = smoothstep(0.0, 0.08, y) * smoothstep(0.42, 0.3, y);
+          float edge = smoothstep(0.06, 0.0, min(vUv.x, 1.0 - vUv.x)) * 0.6;
+          float fade = smoothstep(0.0, 0.25, vUv.y) * 0.85 + 0.15;
+          gl_FragColor = vec4(color * (chev + edge) * fade, 1.0); }`,
+    });
+    const jumpMat = padMat(0x5fd0ff, 3), boostMat = padMat(0xffb000, 3);
     this.padMats = [jumpMat, boostMat];
     for (const p of this.pads) surfQuad(p.s - 8, p.s, p.d0, p.d1, 0.08, jumpMat);
     for (const b of this.boosts) surfQuad(b.s - 7, b.s, b.d - 3, b.d + 3, 0.08, boostMat);

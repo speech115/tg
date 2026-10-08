@@ -1,15 +1,15 @@
 'use strict';
 // DOM overlay: per-player panels, hacking mini-games, commentary, minimap, menu, ending, results.
 const SPEAKERS = {
-  trump: { name: 'Дональд Трамп', short: 'ДТ', color: '#e9be55' },
-  biden: { name: 'Джо Байден', short: 'ДБ', color: '#7aa7ff' },
-  zelensky: { name: 'Владимир Зеленский', short: 'ВЗ', color: '#a9c060' },
-  xi: { name: 'Си Цзиньпин', short: 'СЦ', color: '#ff6a6a' },
-  musk: { name: 'Илон Маск', short: 'ИМ', color: '#35e0ff' },
-  mcafee: { name: 'Джон Макафи', short: 'ДМ', color: '#ffd000' },
-  fable: { name: 'Фейбл', short: 'Ф', color: '#ffb347' },
-  astra: { name: 'Астра', short: 'А', color: '#61e8ff' },
-  omega: { name: 'ОМЕГА', short: 'Ω', color: '#ff2a3d' },
+  trump: { name: 'Donald Trump', short: 'DT', color: '#e9be55' },
+  biden: { name: 'Joe Biden', short: 'JB', color: '#7aa7ff' },
+  zelensky: { name: 'Volodymyr Zelensky', short: 'VZ', color: '#a9c060' },
+  xi: { name: 'Xi Jinping', short: 'XJ', color: '#ff6a6a' },
+  musk: { name: 'Elon Musk', short: 'EM', color: '#35e0ff' },
+  mcafee: { name: 'John McAfee', short: 'JM', color: '#ffd000' },
+  fable: { name: 'Fable', short: 'F', color: '#ffb347' },
+  astra: { name: 'Astra', short: 'A', color: '#61e8ff' },
+  omega: { name: 'OMEGA', short: 'Ω', color: '#ff2a3d' },
 };
 const ICONS = {
   nitro: '<path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-3 2-4 2-7 2 1 3 3 3 5 1-2 1-5 0-9z"/>',
@@ -34,7 +34,7 @@ const HUD = {
     this.mmCtx = this.mm.getContext('2d');
     this.prepMinimap();
     // menu wiring
-    const cfg = { players: 1, laps: 3, diff: 1 };
+    const cfg = { players: 1, laps: 3, diff: 1, gfx: 1 };
     try { Object.assign(cfg, JSON.parse(localStorage.getItem('bunker0cfg') || '{}')); } catch (_) {}
     this.menuCfg = cfg;
     document.querySelectorAll('.seg').forEach((seg) => {
@@ -54,7 +54,7 @@ const HUD = {
     this.$('menuBtn').addEventListener('click', () => { this.$('results').hidden = true; Game.toMenu(); });
     this.$('resumeBtn').addEventListener('click', () => this.pause(false));
     this.$('quitBtn').addEventListener('click', () => { this.pause(false); Game.toMenu(); });
-    this.$('muteBtn').addEventListener('click', () => { const m = Sound.toggleMute(); this.$('muteBtn').textContent = m ? 'ЗВУК: ВЫКЛ' : 'ЗВУК: ВКЛ'; });
+    this.$('muteBtn').addEventListener('click', () => { const m = Sound.toggleMute(); this.$('muteBtn').textContent = m ? 'SOUND: OFF' : 'SOUND: ON'; });
     this.$('ending').addEventListener('click', () => Game.skipEnding());
     G.onKey = (e) => {
       if (e.code === 'Escape' && (Game.state === 'race' || Game.state === 'countdown')) this.pause(!Game.paused);
@@ -79,19 +79,19 @@ const HUD = {
   },
   renderControls() {
     const n = this.menuCfg.players;
-    const names = ['СТИВ', 'СЕРГЕЙ', 'ДАНЕЛ'];
+    const names = ['STEVE', 'SERGEY', 'DANEL'];
     const colors = ['#ff7a1a', '#ff4f8b', '#35e0ff'];
     const sets = {
-      1: [['W A S D / стрелки', 'Q / Enter', 'E / Shift справа', 'Пробел / Shift']],
-      2: [['W A S D', 'Q', 'E', 'Пробел / Shift'], ['стрелки', 'Enter', 'Shift справа', '/ (слэш)']],
-      3: [['W A S D', 'Q', 'E', 'Пробел / Shift'], ['I J K L', 'U', 'O', 'H'], ['стрелки', 'Enter', 'Shift справа', '/ (слэш)']],
+      1: [['W A S D / arrows', 'Q / Enter', 'E / right Shift', 'Space / Shift']],
+      2: [['W A S D', 'Q', 'E', 'Space / Shift'], ['arrows', 'Enter', 'right Shift', '/ (slash)']],
+      3: [['W A S D', 'Q', 'E', 'Space / Shift'], ['I J K L', 'U', 'O', 'H'], ['arrows', 'Enter', 'right Shift', '/ (slash)']],
     }[n];
-    let html = '<div class="ctl-row ctl-head"><span></span><span>руль и газ</span><span>предмет</span><span>огонь · нейро</span><span>дрифт</span></div>';
+    let html = '<div class="ctl-row ctl-head"><span></span><span>steer & gas</span><span>item</span><span>fire · neuro</span><span>drift</span></div>';
     sets.forEach((s, i) => {
       html += `<div class="ctl-row"><span class="ctl-name" style="--c:${colors[i]}">${names[i]}</span>${s.map((k) => `<span><kbd>${k}</kbd></span>`).join('')}</div>`;
     });
-    if (n < 3) html += `<p class="ctl-note">Остальных людей (${names.slice(n).join(', ')}) ведут Фейбл и Астра. Геймпады подключаются автоматически: 1-й геймпад — Стив, 2-й — Сергей, 3-й — Данел.</p>`;
-    else html += '<p class="ctl-note">Трое на одной клавиатуре — тесно, но весело. Геймпады подхватываются автоматически.</p>';
+    if (n < 3) html += `<p class="ctl-note">Fable and Astra drive the other humans (${names.slice(n).join(', ')}). Gamepads connect automatically: pad 1 is Steve, pad 2 is Sergey, pad 3 is Danel.</p>`;
+    else html += '<p class="ctl-note">Three on one keyboard is cramped but fun. Gamepads connect automatically.</p>';
     this.$('controls').innerHTML = html;
   },
 
@@ -116,20 +116,20 @@ const HUD = {
       el.innerHTML = `
         <div class="vp-top">
           <div class="pos"><b data-k="pos">–</b><small>/9</small></div>
-          <div class="who" style="--c:${['#ff7a1a', '#ff4f8b', '#35e0ff'][i]}">${['СТИВ', 'СЕРГЕЙ', 'ДАНЕЛ'][i]}</div>
-          <div class="lap"><span>КРУГ</span> <b data-k="lap">1</b>/<span data-k="laps">3</span><div class="time" data-k="time">0:00.0</div></div>
+          <div class="who" style="--c:${['#ff7a1a', '#ff4f8b', '#35e0ff'][i]}">${['STEVE', 'SERGEY', 'DANEL'][i]}</div>
+          <div class="lap"><span>LAP</span> <b data-k="lap">1</b>/<span data-k="laps">3</span><div class="time" data-k="time">0:00.0</div></div>
         </div>
         <div class="vp-zone" data-k="zone"></div>
         <div class="vp-msg" data-k="msg"></div>
         <div class="vp-warn" data-k="warn"></div>
         <div class="vp-bottom">
-          <div class="slot" data-k="itemSlot"><div class="ico" data-k="ico"></div><div class="slot-txt"><small>ПРЕДМЕТ</small><span data-k="item">—</span></div></div>
-          <div class="slot weapon" data-k="wSlot"><div class="slot-txt"><small>ОРУЖИЕ МАКАФИ</small><span data-k="weapon">нет</span><div class="bar"><i data-k="ammo"></i></div></div></div>
-          <div class="slot bci"><div class="slot-txt"><small>BCI · НЕЙРО</small><span class="pips" data-k="pips"><i></i><i></i><i></i></span><div class="bar neuro"><i data-k="neuro"></i></div></div></div>
-          <div class="speed"><b data-k="spd">0</b><small>км/ч</small><div class="grav" data-k="grav">1.00g</div></div>
+          <div class="slot" data-k="itemSlot"><div class="ico" data-k="ico"></div><div class="slot-txt"><small>ITEM</small><span data-k="item">—</span></div></div>
+          <div class="slot weapon" data-k="wSlot"><div class="slot-txt"><small>McAFEE GUN</small><span data-k="weapon">none</span><div class="bar"><i data-k="ammo"></i></div></div></div>
+          <div class="slot bci"><div class="slot-txt"><small>BCI · NEURO</small><span class="pips" data-k="pips"><i></i><i></i><i></i></span><div class="bar neuro"><i data-k="neuro"></i></div></div></div>
+          <div class="speed"><b data-k="spd">0</b><small>km/h</small><div class="grav" data-k="grav">1.00g</div></div>
         </div>
         <div class="hack" data-k="hack" hidden>
-          <div class="hack-head">ОМЕГА ВЗЛАМЫВАЕТ МАШИНУ</div>
+          <div class="hack-head">OMEGA IS HACKING YOUR CAR</div>
           <div class="hack-body" data-k="hackBody"></div>
           <div class="hack-timer"><i data-k="hackT"></i></div>
           <div class="hack-help" data-k="hackHelp"></div>
@@ -179,6 +179,7 @@ const HUD = {
     this.q.push({ who, text });
     if (this.q.length > 3) this.q.shift();
   },
+  ordinal(n) { const s = ['TH', 'ST', 'ND', 'RD']; const v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); },
   fmtTime(t) { const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`; },
 
   update(dt, R, game) {
@@ -217,7 +218,7 @@ const HUD = {
         const W = WEAPONS[car.weapon];
         this.set(i, 'weapon', `${W.name} · ${car.ammo}`);
         this.set(i, 'ammo', `${(car.ammo / W.ammo) * 100}%`, 'width');
-      } else { this.set(i, 'weapon', car.neuro >= 1 ? 'ОГОНЬ = НЕЙРО-ФОКУС' : 'нет'); this.set(i, 'ammo', '0%', 'width'); }
+      } else { this.set(i, 'weapon', car.neuro >= 1 ? 'FIRE = NEURO FOCUS' : 'none'); this.set(i, 'ammo', '0%', 'width'); }
       p.refs.wSlot.classList.toggle('armed', !!car.weapon);
       const pips = p.refs.pips.children;
       for (let k = 0; k < 3; k++) pips[k].classList.toggle('on', k < car.bci);
@@ -227,7 +228,7 @@ const HUD = {
       const z = T.zoneAt(car.s);
       if (z !== p.lastZone) {
         p.lastZone = z;
-        const names = { lowg: 'НИЗКАЯ ГРАВИТАЦИЯ · 0.25g', tube: 'НУЛЕВАЯ ГРАВИТАЦИЯ · ТРУБА', heavy: 'ТЯЖЁЛАЯ ГРАВИТАЦИЯ · 2.2g', bunker: 'БУНКЕР-0 · ПОДВАЛ B-1', space: 'ОТКРЫТЫЙ КОСМОС' };
+        const names = { lowg: 'LOW GRAVITY · 0.25g', tube: 'ZERO GRAVITY · TUBE', heavy: 'HEAVY GRAVITY · 2.2g', bunker: 'BUNKER-0 · BASEMENT B-1', space: 'OPEN SPACE' };
         const el = p.refs.zone;
         el.textContent = names[z]; el.dataset.z = z;
         el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
@@ -237,10 +238,10 @@ const HUD = {
       if (p.msgT <= 0) this.set(i, 'msg', '');
       // warnings
       let warn = '';
-      if (R.omega.aim && R.omega.aim.car === car) warn = 'ЛУЧ ОМЕГИ НАВЕДЁН';
-      else if (R.drones.some((d) => d.target === car && d.phase === 'chase')) warn = 'ДРОН ОМЕГИ ПРЕСЛЕДУЕТ';
-      else if (R.wave.active && car.waveDist !== undefined && car.waveDist < 180 && !car.finished) warn = `ВОЛНА ОМЕГИ · ${Math.max(0, Math.round(car.waveDist))} м`;
-      else if (car.stallT > 0) warn = 'ПЕРЕЗАГРУЗКА…';
+      if (R.omega.aim && R.omega.aim.car === car) warn = 'OMEGA BEAM LOCKED';
+      else if (R.drones.some((d) => d.target === car && d.phase === 'chase')) warn = 'OMEGA DRONE PURSUING';
+      else if (R.wave.active && car.waveDist !== undefined && car.waveDist < 180 && !car.finished) warn = `OMEGA WAVE · ${Math.max(0, Math.round(car.waveDist))} m`;
+      else if (car.stallT > 0) warn = 'REBOOTING…';
       this.set(i, 'warn', warn);
       p.el.classList.toggle('danger', !!car.hack || (R.wave.active && car.waveDist < 80 && !car.finished));
       p.el.classList.toggle('spectate', car.finished);
@@ -250,12 +251,12 @@ const HUD = {
       if (hk) {
         if (hk.type === 'seq') {
           const html = hk.seq.map((d, k) => `<span class="${k < hk.idx ? (hk.helped.includes(k) ? 'ok help' : 'ok') : k === hk.idx ? 'now' : ''}">${DIR_GLYPH[d]}</span>`).join('');
-          this.set(i, 'hackBody', `<div class="seq${hk.shake > 0 ? ' shake' : ''}">${html}</div><div class="hint">Повтори стрелки своими клавишами руля</div>`, 'html');
-          this.set(i, 'hackHelp', 'Фейбл и Астра взламывают в ответ: каждые пару секунд закрывают один символ', 'textContent');
+          this.set(i, 'hackBody', `<div class="seq${hk.shake > 0 ? ' shake' : ''}">${html}</div><div class="hint">Repeat the arrows with your steering keys</div>`, 'html');
+          this.set(i, 'hackHelp', 'Fable and Astra hack back: they clear one symbol every couple of seconds', 'textContent');
         } else {
-          const html = `<div class="meter${hk.shake > 0 ? ' shake' : ''}"><i class="zone" style="left:${hk.zone * 100}%;width:${hk.width * 100}%"></i><i class="needle" style="left:${hk.needle * 100}%"></i></div><div class="hint">Жми ПРЕДМЕТ/ОГОНЬ/ДРИФТ, когда игла в зелёной зоне · ${hk.hits}/${hk.need}</div>`;
+          const html = `<div class="meter${hk.shake > 0 ? ' shake' : ''}"><i class="zone" style="left:${hk.zone * 100}%;width:${hk.width * 100}%"></i><i class="needle" style="left:${hk.needle * 100}%"></i></div><div class="hint">Press ITEM/FIRE/DRIFT when the needle is in the green zone · ${hk.hits}/${hk.need}</div>`;
           p.refs.hackBody.innerHTML = html; this.cache.delete(i + 'hackBodyhtml');
-          this.set(i, 'hackHelp', 'Фейбл и Астра расширяют окно файрвола', 'textContent');
+          this.set(i, 'hackHelp', 'Fable and Astra are widening the firewall window', 'textContent');
         }
         this.set(i, 'hackT', `${(hk.timer / 8) * 100}%`, 'width');
       }
@@ -266,10 +267,10 @@ const HUD = {
       this.standT = 0.25;
       const charge = Math.round(World.portalG.charge * 100);
       const stun = R.omega.stun > 0;
-      this.$('status').innerHTML = `<span>ПОРТАЛ <b>${charge}%</b></span><span>ПРИНТЕР <b>${R.humansDone}/3</b></span><span class="om${stun ? ' off' : ''}">ОМЕГА ${stun ? 'ОГЛУШЕНА' : 'АКТИВНА'}</span>`;
+      this.$('status').innerHTML = `<span>PORTAL <b>${charge}%</b></span><span>PRINTER <b>${R.humansDone}/3</b></span><span class="om${stun ? ' off' : ''}">OMEGA ${stun ? 'STUNNED' : 'ACTIVE'}</span>`;
       this.$('standings').innerHTML = R.sorted.map((c) => {
         const col = '#' + new THREE.Color(c.color).getHexString();
-        return `<li class="${c.isHuman ? 'human' : ''}${c.finished ? ' done' : ''}" style="--c:${col}"><i></i><span>${c.name}</span>${c.finished ? '<em>B-1</em>' : c.hack || c.aiHackT > 0 ? '<em class="hk">ВЗЛОМ</em>' : ''}</li>`;
+        return `<li class="${c.isHuman ? 'human' : ''}${c.finished ? ' done' : ''}" style="--c:${col}"><i></i><span>${c.name}</span>${c.finished ? '<em>B-1</em>' : c.hack || c.aiHackT > 0 ? '<em class="hk">HACKED</em>' : ''}</li>`;
       }).join('');
     }
     this.drawMinimap(R);
@@ -372,22 +373,22 @@ const HUD = {
     sorted.forEach((c, i) => { team[c.team] += PTS[i] || 0; });
     const best = Object.entries(team).sort((a, b) => b[1] - a[1])[0][0];
     this.$('teamScores').innerHTML = Object.entries(team).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
-      `<div class="team ${k}${k === best ? ' win' : ''}"><small>${TEAM_NAMES[k]}</small><b>${v}</b><span>очков</span></div>`).join('');
-    this.$('table').innerHTML = '<div class="tr th"><span>#</span><span>гонщик</span><span>команда</span><span>время</span><span>очки</span></div>' + sorted.map((c, i) => {
+      `<div class="team ${k}${k === best ? ' win' : ''}"><small>${TEAM_NAMES[k]}</small><b>${v}</b><span>points</span></div>`).join('');
+    this.$('table').innerHTML = '<div class="tr th"><span>#</span><span>racer</span><span>team</span><span>time</span><span>pts</span></div>' + sorted.map((c, i) => {
       const col = '#' + new THREE.Color(c.color).getHexString();
-      return `<div class="tr${c.isHuman ? ' human' : ''}" style="--c:${col}"><span>${i + 1}</span><span><i></i>${c.name}</span><span>${TEAM_NAMES[c.team]}</span><span>${c.finished ? this.fmtTime(c.finishTime) : 'в пути'}</span><span>${PTS[i] || 0}</span></div>`;
+      return `<div class="tr${c.isHuman ? ' human' : ''}" style="--c:${col}"><span>${i + 1}</span><span><i></i>${c.name}</span><span>${TEAM_NAMES[c.team]}</span><span>${c.finished ? this.fmtTime(c.finishTime) : 'racing'}</span><span>${PTS[i] || 0}</span></div>`;
     }).join('');
     this.$('stats').innerHTML = R.humans.map((h) => {
       const col = '#' + new THREE.Color(h.color).getHexString();
       return `<div class="stat" style="--c:${col}"><b>${h.name}</b><dl>
-        <dt>BCI-чипы</dt><dd>${h.stats.chips}</dd><dt>Взломов пережито</dt><dd>${h.stats.hacks}</dd>
-        <dt>Отбито вручную</dt><dd>${h.stats.hacksBeaten}</dd><dt>Ящики Макафи</dt><dd>${h.stats.crates}</dd>
-        <dt>Сбито врагов</dt><dd>${h.stats.kills}</dd><dt>Падений в бездну</dt><dd>${h.stats.falls}</dd></dl></div>`;
+        <dt>BCI chips</dt><dd>${h.stats.chips}</dd><dt>Hacks survived</dt><dd>${h.stats.hacks}</dd>
+        <dt>Hacks beaten by hand</dt><dd>${h.stats.hacksBeaten}</dd><dt>McAfee crates</dt><dd>${h.stats.crates}</dd>
+        <dt>Enemies hit</dt><dd>${h.stats.kills}</dd><dt>Falls into the void</dt><dd>${h.stats.falls}</dd></dl></div>`;
     }).join('');
     const humanWin = best === 'human';
     this.$('resultsLead').textContent = humanWin
-      ? 'Команда людей выиграла гонку и доставила письмо. ИИ-лаборатории 2024 года прочли его до конца. ОМЕГА так и не была запущена.'
-      : 'Пришельцы обогнали людей по очкам, но портал пропускает только людей. Письмо всё равно ушло в 2024-й. ИИ-лаборатории его прочли. ОМЕГА так и не была запущена.';
+      ? 'Team Human won the race and delivered the letter. The AI labs of 2024 read it to the end. OMEGA was never switched on.'
+      : 'The aliens beat the humans on points, but the portal only lets humans through. The letter still reached 2024. The AI labs read it. OMEGA was never switched on.';
   },
 };
 G.HUD = HUD;

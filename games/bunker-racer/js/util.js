@@ -17,6 +17,7 @@ function canvasTex(w, h, draw, opts = {}) {
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
   if (opts.repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
+  if (!opts.linear) t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   t.userData = { canvas: c };
   return t;
@@ -32,8 +33,8 @@ const GLOW_TEX = canvasTex(128, 128, (g, w) => {
   g.fillStyle = gr; g.fillRect(0, 0, w, w);
 });
 
-function glowSprite(color, size, opacity = 1) {
-  const m = new THREE.SpriteMaterial({ map: GLOW_TEX, color, transparent: true, opacity,
+function glowSprite(color, size, opacity = 1, hdr = 1.2) {
+  const m = new THREE.SpriteMaterial({ map: GLOW_TEX, color: new THREE.Color(color).multiplyScalar(hdr), transparent: true, opacity,
     blending: THREE.AdditiveBlending, depthWrite: false });
   const s = new THREE.Sprite(m);
   s.scale.set(size, size, 1);
@@ -74,9 +75,55 @@ function labelSprite(text, opts = {}) {
 function mat(color, opts = {}) {
   return new THREE.MeshLambertMaterial(Object.assign({ color }, opts));
 }
-function glowMat(color, opacity = 1) {
-  return new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity,
+function glowMat(color, opacity = 1, hdr = 1.6) {
+  return new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(hdr), transparent: opacity < 1, opacity,
     blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+}
+
+// ---------------------------------------------------------------- Blender assets (GLB)
+// asset('kart', 'Kart') -> deep clone of a named node from assets/kart.glb.
+function asset(file, name, o = {}) {
+  const lib = window.ASSETS && window.ASSETS[file];
+  const src = lib && (name ? lib.getObjectByName(name) : lib);
+  if (!src) { console.warn('missing asset', file, name); return new THREE.Group(); }
+  const obj = src.clone(true);
+  obj.position.set(0, 0, 0);
+  obj.traverse((m) => {
+    if (!m.isMesh) return;
+    m.castShadow = o.cast !== false; m.receiveShadow = o.receive !== false;
+    if (m.material && m.material.envMapIntensity !== undefined) m.material.envMapIntensity = o.env || 1;
+  });
+  return obj;
+}
+// Recolour materials by name: { Paint: 0xff7a1a, Neon: { emissive: 0x35e0ff, k: 4 } }.
+function recolor(obj, spec) {
+  const cache = new Map();
+  obj.traverse((m) => {
+    if (!m.isMesh) return;
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    const out = mats.map((mt) => {
+      const key = Object.keys(spec).find((k) => mt.name === k || mt.name.startsWith(k + '.') || mt.name.endsWith('_' + k));
+      if (!key) return mt;
+      if (cache.has(mt)) return cache.get(mt);
+      const c = mt.clone();
+      const v = spec[key];
+      if (typeof v === 'number' || typeof v === 'string') c.color.set(v);
+      else if (typeof v === 'function') v(c);
+      else {
+        if (v.color !== undefined) c.color.set(v.color);
+        if (v.emissive !== undefined) { c.emissive.set(v.emissive); c.emissiveIntensity = v.k || c.emissiveIntensity; }
+      }
+      cache.set(mt, c);
+      return c;
+    });
+    m.material = Array.isArray(m.material) ? out : out[0];
+  });
+  return obj;
+}
+function findMat(obj, name) {
+  let found = null;
+  obj.traverse((m) => { if (!found && m.isMesh && (m.material.name === name || m.material.name.endsWith('_' + name))) found = m.material; });
+  return found;
 }
 
 // ---------------------------------------------------------------- input
@@ -162,4 +209,4 @@ const Input = {
 };
 
 Object.assign(G, { V3, clamp, lerp, smooth, rand, pick, damp, mod, TAU, canvasTex, GLOW_TEX,
-  glowSprite, labelSprite, mat, glowMat, Input, KEYSETS, LAYOUTS });
+  glowSprite, labelSprite, mat, glowMat, asset, recolor, findMat, Input, KEYSETS, LAYOUTS });
