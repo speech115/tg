@@ -85,6 +85,14 @@ npm run build:standalone
 - `Esc` — пауза, `M` — звук.
 - На телефоне в одиночной игре появляются сенсорные кнопки.
 
+## Деплой на Vercel
+
+Игра — статический сайт, сборка не нужна (`vercel.json` уже настроен).
+
+- **Через сайт:** vercel.com → Add New → Project → импортировать `speech115/tg` →
+  Root Directory: `games/bunker-racer` → Deploy. Дальше каждый пуш деплоится сам.
+- **Через CLI:** `cd games/bunker-racer && npx vercel --prod`.
+
 ## Пересборка моделей
 
 Модели собираются из кода, исходных `.blend` файлов нет. Нужен Blender как Python-модуль
