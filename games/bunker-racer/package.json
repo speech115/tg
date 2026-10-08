@@ -1,0 +1,13 @@
+{
+  "name": "bunker-0",
+  "private": true,
+  "description": "Bunker-0 browser racer. Only needed to rebuild the single-file Bunker-0.html.",
+  "scripts": {
+    "build:standalone": "node tools/build_standalone.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "peerjs": "^1.5.4",
+    "three": "0.160.0"
+  }
+}

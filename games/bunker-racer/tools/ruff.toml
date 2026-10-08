@@ -1,0 +1,7 @@
+# Blender asset scripts read like modelling notes: long coordinate lines are clearer unwrapped.
+line-length = 160
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "E731", "I001"]
