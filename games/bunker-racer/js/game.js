@@ -15,8 +15,21 @@ const Game = {
   cfg: { players: 1, laps: 3, diff: 1 },
 
   init() {
+    try { this.boot(); } catch (err) { console.error(err); if (window.showFatal) window.showFatal(err); }
+  },
+  boot() {
     const canvas = document.getElementById('c');
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    } catch (err) {
+      throw new Error('WebGL is not available in this browser. Turn on hardware acceleration or try Chrome. (' + err.message + ')');
+    }
+    this.renderer = renderer;
+    // Older GPUs / Safari builds: fall back from HDR + MSAA render targets when unsupported.
+    const caps = renderer.capabilities, ext = renderer.extensions;
+    Post.maxSamples = caps.isWebGL2 ? Math.min(4, caps.maxSamples || 4) : 0;
+    Post.hdr = caps.isWebGL2 ? (ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float')) : ext.has('EXT_color_buffer_half_float');
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -49,6 +62,7 @@ const Game = {
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+    window.GAME_READY = true;
   },
 
   resize() {
@@ -65,7 +79,7 @@ const Game = {
       this.quality = q;
       r.shadowMap.enabled = q > 0;
       World.sun.castShadow = q > 0;
-      Post.samples = q ? 4 : 0;
+      Post.samples = q ? Post.maxSamples : 0;
       Post.comps = [];
       this.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
     }

@@ -40,10 +40,10 @@ const FX_SHADER = {
 };
 
 const Post = {
-  comps: [], samples: 4,
+  comps: [], samples: 4, maxSamples: 4, hdr: true,
   init(renderer) { this.r = renderer; },
   make() {
-    const rt = new THREE.WebGLRenderTarget(16, 16, { type: THREE.HalfFloatType, samples: this.samples });
+    const rt = new THREE.WebGLRenderTarget(16, 16, { type: this.hdr ? THREE.HalfFloatType : THREE.UnsignedByteType, samples: this.samples });
     const c = new THREE.EffectComposer(this.r, rt);
     const rp = new THREE.RenderPass(new THREE.Scene(), new THREE.PerspectiveCamera());
     const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(16, 16), 0.55, 0.35, 1.0);

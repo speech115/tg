@@ -40,6 +40,7 @@ button:focus-visible, kbd:focus-visible { outline: 2px solid var(--amber); outli
 #loading span { font: 700 11px var(--mono); letter-spacing: .2em; color: var(--dim); }
 .lbar { height: 4px; background: rgba(255,255,255,.08); }
 .lbar i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .2s; }
+#loadError { margin: 8px 0 0; padding: 10px 12px; max-width: 100%; white-space: pre-wrap; word-break: break-word; font: 600 12px/1.5 var(--mono); color: var(--ink); background: rgba(255,42,61,.15); border-left: 3px solid var(--omega); user-select: text; }
 /* ---------------- viewport HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; }
 .vp { position: absolute; overflow: hidden; border: 1px solid rgba(255,176,0,0.12); }
@@ -277,7 +278,25 @@ body.touch #info.solo #standings { display: none; }
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="loading"><div class="ld"><b>BUNKER-0</b><span id="loadLabel">LOADING MODELS…</span><div class="lbar"><i id="loadBar"></i></div></div></div>
+<div id="loading"><div class="ld"><b>BUNKER-0</b><span id="loadLabel">LOADING MODELS…</span><div class="lbar"><i id="loadBar"></i></div><pre id="loadError" hidden></pre></div></div>
+<script>
+  // Show any startup failure on screen instead of hanging on the loading bar.
+  window.showFatal = function (err) {
+    window.BOOT_FAILED = true;
+    var box = document.getElementById('loadError'), label = document.getElementById('loadLabel');
+    var msg = (err && (err.message || err.reason && err.reason.message)) || String(err);
+    if (label) label.textContent = 'THE GAME COULD NOT START';
+    if (box) { box.hidden = false; box.textContent = msg + '\n\n' + navigator.userAgent; }
+    var l = document.getElementById('loading'); if (l) { l.hidden = false; l.classList.remove('done'); }
+  };
+  window.addEventListener('error', function (e) { if (!window.GAME_READY) window.showFatal(e.error || e.message); });
+  window.addEventListener('unhandledrejection', function (e) { if (!window.GAME_READY) window.showFatal(e.reason); });
+  if (location.protocol === 'file:' && !window.STANDALONE) {
+    setTimeout(function () {
+      if (!window.Game) window.showFatal('Browsers block this page when it is opened as a local file. Open Bunker-0.html instead (it works with a double-click), or run: python3 -m http.server and visit http://localhost:8000');
+    }, 3000);
+  }
+</script>
 <div id="hud" hidden></div>
 <div id="info" hidden><div class="mapcol"><canvas id="minimap"></canvas><div id="status"></div></div><ol id="standings"></ol></div>
 <div id="comment"></div>

@@ -1,15 +1,6 @@
 // Module entry: loads three.js r160 + addons, preloads the Blender-made GLB assets,
 // then runs the classic game scripts in order with THREE exposed as a global.
-import * as T from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
-
-window.THREE = Object.assign({}, T, { EffectComposer, RenderPass, UnrealBloomPass, OutputPass, ShaderPass, GLTFLoader, Lensflare, LensflareElement });
+import './three-setup.js';
 
 const bar = document.getElementById('loadBar');
 const label = document.getElementById('loadLabel');
@@ -32,7 +23,7 @@ function loadScript(src) {
 }
 
 async function boot() {
-  const loader = new GLTFLoader();
+  const loader = new THREE.GLTFLoader();
   window.ASSETS = {};
   // .glb in the repo; hosts that only serve text get an embedded-glTF .json copy (tools/glb2json.mjs)
   const load = (f, ext) => loader.loadAsync(`assets/${f}.${ext}`, (e) => {
@@ -46,12 +37,10 @@ async function boot() {
   const fonts = document.fonts ? document.fonts.ready : Promise.resolve();
   await Promise.race([fonts, new Promise((r) => setTimeout(r, 2500))]);
   window.Game.init();
+  if (window.BOOT_FAILED) return;
   if (bar) bar.style.width = '100%';
   const el = document.getElementById('loading');
   if (el) { el.classList.add('done'); setTimeout(() => { el.hidden = true; }, 700); }
 }
 
-boot().catch((err) => {
-  console.error(err);
-  if (label) label.textContent = `LOADING ERROR: ${err.message}`;
-});
+boot().catch((err) => window.showFatal && window.showFatal(err));

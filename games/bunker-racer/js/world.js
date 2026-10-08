@@ -85,7 +85,7 @@ const World = {
     const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.95, 0.85).multiplyScalar(40) }));
     sunDisc.position.copy(SUN_DIR).multiplyScalar(90);
     skyScene.add(sunDisc);
-    const cubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+    const cubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: Post.hdr ? THREE.HalfFloatType : THREE.UnsignedByteType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
     const cubeCam = new THREE.CubeCamera(1, 1000, cubeRT);
     cubeCam.update(renderer, skyScene);
     scene.background = cubeRT.texture;
