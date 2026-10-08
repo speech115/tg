@@ -229,8 +229,7 @@ def export(path):
     objs = list(bpy.context.scene.objects)
     uv_project([o for o in objs if o.type == "MESH"])
     bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, path), export_format="GLB", use_selection=True,
-                              export_apply=True, export_yup=True)
+    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, path), export_format="GLB", use_selection=True, export_apply=True, export_yup=True)
     tris = sum(sum(len(p.vertices) - 2 for p in o.data.polygons) for o in objs if o.type == "MESH")
     size = os.path.getsize(os.path.join(OUT, path))
     print(f"[asset] {path}: {tris} tris, {size / 1024:.0f} KB")
@@ -408,7 +407,9 @@ def person(name, spec):
     if not tshirt:
         p.append(cube(f"{name}ShirtV", (0, -0.2, 1.58), (0.2, 0.06, 0.32), shirt, rot=(0.15, 0, 0)))
         for sx in (-1, 1):
-            p.append(cube(f"{name}Lapel{sx}", (sx * 0.12, -0.225, 1.55), (0.1, 0.03, 0.38), S("Lapel", [c * 0.7 for c in spec["suit"]]), rot=(0.12, sx * 0.35, 0)))
+            p.append(
+                cube(f"{name}Lapel{sx}", (sx * 0.12, -0.225, 1.55), (0.1, 0.03, 0.38), S("Lapel", [c * 0.7 for c in spec["suit"]]), rot=(0.12, sx * 0.35, 0))
+            )
         if spec.get("tie"):
             tie = S("Tie", spec["tie"], 0.1, 0.4)
             tlen = spec.get("tie_len", 0.42)
@@ -446,6 +447,7 @@ def person(name, spec):
         if v.z < -0.02 and abs(v.x) > 0.16 and v.y < 0.0:
             return v * 0.86
         return v
+
     deform(shell, hairline)
     p.append(shell)
     if st == "swoop":
@@ -482,18 +484,27 @@ def person(name, spec):
 
 
 LEADERS = {
-    "Trump": dict(skin=(0.95, 0.64, 0.45), suit=(0.09, 0.11, 0.22), tie=(0.8, 0.05, 0.06), tie_len=0.6,
-                  hair=(0.93, 0.72, 0.35), style="swoop", face=(0.97, 0.96, 1.04)),
-    "Biden": dict(skin=(0.95, 0.78, 0.67), suit=(0.11, 0.15, 0.27), tie=(0.15, 0.3, 0.75), hair=(0.95, 0.95, 0.95),
-                  style="white", glasses="aviator", smile=True),
-    "Zelensky": dict(skin=(0.92, 0.74, 0.62), suit=(0.28, 0.32, 0.17), pants=(0.2, 0.22, 0.15), tshirt=True,
-                     hair=(0.2, 0.15, 0.11), style="short", beard=(0.2, 0.15, 0.11)),
-    "Xi": dict(skin=(0.93, 0.77, 0.6), suit=(0.08, 0.08, 0.1), tie=(0.5, 0.06, 0.1), hair=(0.03, 0.03, 0.03),
-               style="neat", face=(0.98, 0.97, 1.02)),
-    "Musk": dict(skin=(0.95, 0.78, 0.68), suit=(0.05, 0.05, 0.06), pants=(0.1, 0.13, 0.2), tshirt=True,
-                 hair=(0.12, 0.09, 0.07), style="slick"),
-    "McAfee": dict(skin=(0.9, 0.7, 0.56), suit=(0.08, 0.08, 0.09), shirt=(0.95, 0.95, 0.95), hair=(0.62, 0.62, 0.62),
-                   style="slick", goatee=(0.75, 0.75, 0.75), glasses="wrap", chain=True),
+    "Trump": dict(
+        skin=(0.95, 0.64, 0.45), suit=(0.09, 0.11, 0.22), tie=(0.8, 0.05, 0.06), tie_len=0.6, hair=(0.93, 0.72, 0.35), style="swoop", face=(0.97, 0.96, 1.04)
+    ),
+    "Biden": dict(
+        skin=(0.95, 0.78, 0.67), suit=(0.11, 0.15, 0.27), tie=(0.15, 0.3, 0.75), hair=(0.95, 0.95, 0.95), style="white", glasses="aviator", smile=True
+    ),
+    "Zelensky": dict(
+        skin=(0.92, 0.74, 0.62), suit=(0.28, 0.32, 0.17), pants=(0.2, 0.22, 0.15), tshirt=True, hair=(0.2, 0.15, 0.11), style="short", beard=(0.2, 0.15, 0.11)
+    ),
+    "Xi": dict(skin=(0.93, 0.77, 0.6), suit=(0.08, 0.08, 0.1), tie=(0.5, 0.06, 0.1), hair=(0.03, 0.03, 0.03), style="neat", face=(0.98, 0.97, 1.02)),
+    "Musk": dict(skin=(0.95, 0.78, 0.68), suit=(0.05, 0.05, 0.06), pants=(0.1, 0.13, 0.2), tshirt=True, hair=(0.12, 0.09, 0.07), style="slick"),
+    "McAfee": dict(
+        skin=(0.9, 0.7, 0.56),
+        suit=(0.08, 0.08, 0.09),
+        shirt=(0.95, 0.95, 0.95),
+        hair=(0.62, 0.62, 0.62),
+        style="slick",
+        goatee=(0.75, 0.75, 0.75),
+        glasses="wrap",
+        chain=True,
+    ),
 }
 
 
@@ -557,7 +568,7 @@ def build_props():
     subsurf(br, 1)
     finish(br, brain_m)
     # central fissure
-    deform(br, lambda v: Vector((v.x + (0.05 if v.x > 0 else -0.05), v.y, v.z - (0.12 * math.exp(-(v.x * 14) ** 2) if v.z > 0 else 0))))
+    deform(br, lambda v: Vector((v.x + (0.05 if v.x > 0 else -0.05), v.y, v.z - (0.12 * math.exp(-((v.x * 14) ** 2)) if v.z > 0 else 0))))
     p = [br]
     p.append(cube("BrainChip", (0, 0, -0.55), (1.2, 1.2, 0.12), M["carbon"], bev=0.03))
     for i in range(6):
@@ -585,8 +596,18 @@ def build_props():
     chute_m = mat("Chute", (1.0, 0.45, 0.1), 0.0, 0.7)
     canopy = sphere("ChuteCanopy", (0, 0, 4.2), 2.6, chute_m, scale=(1, 1, 0.55), seg=16, rings=8)
     deform(canopy, lambda v: Vector((v.x, v.y, max(v.z, 0.0))))
-    lines = [cyl(f"Line{i}", (math.cos(i / 6 * math.tau) * 1.3, math.sin(i / 6 * math.tau) * 1.3, 2.6), 0.015, 2.9, M["steel"], verts=4,
-                 rot=(math.sin(i / 6 * math.tau) * 0.45, -math.cos(i / 6 * math.tau) * 0.45, 0)) for i in range(6)]
+    lines = [
+        cyl(
+            f"Line{i}",
+            (math.cos(i / 6 * math.tau) * 1.3, math.sin(i / 6 * math.tau) * 1.3, 2.6),
+            0.015,
+            2.9,
+            M["steel"],
+            verts=4,
+            rot=(math.sin(i / 6 * math.tau) * 0.45, -math.cos(i / 6 * math.tau) * 0.45, 0),
+        )
+        for i in range(6)
+    ]
     chute = join([canopy] + lines, "Chute")
     parent([chute], root)
 
@@ -616,7 +637,14 @@ def build_props():
     emitters = []
     for i in range(12):
         a = i / 12 * math.tau
-        e = cube(f"Emitter_{i}", (math.cos(a) * 18.7, 0, math.sin(a) * 18.7), (1.6, 2.2, 0.8), mat(f"Emit{i}", (1, 1, 1), 0, 0.3, emit=(1, 1, 1), strength=5), rot=(0, -a, 0), bev=0.1)
+        e = cube(
+            f"Emitter_{i}",
+            (math.cos(a) * 18.7, 0, math.sin(a) * 18.7),
+            (1.6, 2.2, 0.8),
+            mat(f"Emit{i}", (1, 1, 1), 0, 0.3, emit=(1, 1, 1), strength=5),
+            rot=(0, -a, 0),
+            bev=0.1,
+        )
         emitters.append(e)
     for sx in (-1, 1):
         p.append(cube(f"PClamp{sx}", (sx * 9, 0, -16.5), (5, 5, 4), frame, bev=0.4))
@@ -661,13 +689,25 @@ def build_printer():
     # input tray with paper stack at the back
     p.append(cube("PInTray", (0, 21, 33), (54, 1.2, 22), trim, bev=0.4, rot=(-0.55, 0, 0)))
     for k in range(10):
-        p.append(cube(f"PSheet{k}", (random.uniform(-0.6, 0.6), 19.6 - k * 0.12, 33 + k * 0.08), (48, 0.12, 19), paper, rot=(-0.55, 0, random.uniform(-0.02, 0.02))))
+        p.append(
+            cube(f"PSheet{k}", (random.uniform(-0.6, 0.6), 19.6 - k * 0.12, 33 + k * 0.08), (48, 0.12, 19), paper, rot=(-0.55, 0, random.uniform(-0.02, 0.02)))
+        )
     # control panel
     p.append(cube("PPanel", (22, -19.5, 21), (18, 4, 7), trim, bev=0.6, rot=(0.6, 0, 0)))
     scr = cube("PScreen", (20.5, -21.0, 21.9), (12, 0.4, 5.2), screen, rot=(0.6, 0, 0))
     p.append(scr)
     for k, c in enumerate(((0.2, 1, 0.4), (1, 0.8, 0.1), (1, 0.15, 0.2))):
-        p.append(cyl(f"PBtn{k}", (28.5, -21.2 + k * 0.0, 22.8 - k * 1.6), 0.6, 0.6, mat(f"Btn{k}", c, 0, 0.3, emit=c, strength=4), rot=(0.6 + math.pi / 2, 0, 0), verts=16))
+        p.append(
+            cyl(
+                f"PBtn{k}",
+                (28.5, -21.2 + k * 0.0, 22.8 - k * 1.6),
+                0.6,
+                0.6,
+                mat(f"Btn{k}", c, 0, 0.3, emit=c, strength=4),
+                rot=(0.6 + math.pi / 2, 0, 0),
+                verts=16,
+            )
+        )
     # ink tanks (glass + glowing ink)
     glass = mat("InkGlass", (0.8, 0.9, 1.0), 0.0, 0.05, alpha=0.3)
     inks = [("Ink_C", (0.0, 0.75, 1.0)), ("Ink_M", (1.0, 0.1, 0.6)), ("Ink_Y", (1.0, 0.85, 0.0)), ("Ink_K", (0.05, 0.05, 0.07))]
@@ -725,7 +765,7 @@ def build_bunker():
         p.append(bbox("WA", xa, xb, -46, -1, Z0, zA, hull, 0.4))
         p.append(bbox("WB", xa, xb, -46, -1, zB, Z1, hull, 0.4))
         # hangar frame
-        for (a0, a1, b0, b1) in ((-48, -45, zA - 3, zB + 3), (-2, 1, zA - 3, zB + 3)):
+        for a0, a1, b0, b1 in ((-48, -45, zA - 3, zB + 3), (-2, 1, zA - 3, zB + 3)):
             p.append(bbox("FrameH", xa - 1.5, xb + 1.5, a0, a1, b0, b1, plate, 0.3))
         for zz in (zA - 1.5, zB + 1.5):
             p.append(bbox("FrameV", xa - 1.5, xb + 1.5, -48, 1, zz - 1.5, zz + 1.5, plate, 0.3))
@@ -756,7 +796,7 @@ def build_bunker():
         z = random.uniform(Z0 + 6, Z1 - 6)
         w, h, d = random.uniform(3, 14), random.uniform(1, 6), random.uniform(3, 14)
         p.append(bbox("RoofG", x - w / 2, x + w / 2, Y1 + 6, Y1 + 6 + h, z - d / 2, z + d / 2, random.choice((hull, dark, plate)), 0.3))
-    for (x, z, hgt) in ((-120, 240, 60), (80, 330, 45), (10, 236, 80), (-30, 340, 35)):
+    for x, z, hgt in ((-120, 240, 60), (80, 330, 45), (10, 236, 80), (-30, 340, 35)):
         p.append(cyl("Mast", B(x, Y1 + 6 + hgt / 2, z), 1.0, hgt, steel, verts=8, r2=0.4))
         for k in range(3):
             p.append(cube("Cross", B(x, Y1 + 12 + k * hgt / 4, z), (10 - k * 2.5, 0.4, 0.4), steel))
