@@ -5,7 +5,7 @@ import './three-setup.js';
 const bar = document.getElementById('loadBar');
 const label = document.getElementById('loadLabel');
 const FILES = ['kart', 'saucers', 'characters', 'props', 'printer', 'bunker'];
-const SCRIPTS = ['util', 'render', 'audio', 'track', 'world', 'entities', 'hud', 'game'];
+const SCRIPTS = ['util', 'render', 'audio', 'track', 'world', 'entities', 'hud', 'game', 'net'];
 const progress = {};
 const setProgress = () => {
   const vals = FILES.map((f) => progress[f] || 0);

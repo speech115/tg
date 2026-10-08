@@ -183,6 +183,26 @@ button:focus-visible, kbd:focus-visible { outline: 2px solid var(--amber); outli
 #startBtn { margin-top: 4px; background: var(--amber); color: #05060d; border: 0; padding: 18px 20px; font: 900 22px var(--display); letter-spacing: .02em; cursor: pointer; clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%); transition: transform .12s; display: flex; justify-content: space-between; align-items: center; }
 #startBtn small { font: 700 11px var(--mono); letter-spacing: .14em; opacity: .7; }
 #startBtn:hover { transform: translateX(4px); }
+#startBtn:disabled { background: #2a2f44; color: var(--dim); cursor: default; transform: none; }
+body.online [data-local] { display: none; }
+[data-hostonly][hidden] { display: none; }
+#online { display: flex; flex-direction: column; gap: 10px; }
+#online[hidden] { display: none; }
+#netStart { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#netStart .or { font: 700 11px var(--mono); letter-spacing: .14em; color: var(--dim); }
+#joinCode { width: 7.5em; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.22); color: var(--ink); font: 800 16px var(--mono); letter-spacing: .3em; padding: 10px 10px; text-transform: uppercase; }
+#joinCode:focus { outline: none; border-color: var(--amber); }
+.room-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.room-head small { font: 700 11px var(--mono); letter-spacing: .16em; color: var(--dim); }
+.room-head b { font: 900 30px var(--mono); letter-spacing: .22em; color: var(--amber); margin-right: auto; }
+.room-head .btn { padding: 8px 12px; font-size: 12px; }
+#slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#slots li { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-left: 3px solid var(--c); background: rgba(255,255,255,.03); font: 600 13px var(--body); color: var(--dim); }
+#slots li b { font: 800 12px var(--mono); letter-spacing: .1em; color: var(--c); min-width: 64px; }
+#slots li.taken span { color: var(--ink); }
+#netMsg:empty { display: none; }
+#netMsg.bad { color: var(--omega); }
+#againBtn:disabled { opacity: .55; cursor: default; }
 #controls { font-size: 12px; }
 .ctl-row { display: grid; grid-template-columns: 74px 1.4fr 1fr 1.1fr 1.1fr; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px solid rgba(255,255,255,.06); }
 .ctl-head { font: 700 9px var(--mono); letter-spacing: .14em; color: var(--dim); text-transform: uppercase; border: 0; }
@@ -321,10 +341,24 @@ body.touch #info.solo #standings { display: none; }
     </ul>
   </div>
   <div class="card">
-    <div class="opt"><span>PLAYERS ON THIS SCREEN</span><div class="seg" data-key="players"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
-    <div class="opt"><span>LAPS</span><div class="seg" data-key="laps"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
+    <div class="opt"><span>PLAY</span><div class="seg" data-key="mode"><button data-v="0">ON THIS SCREEN</button><button data-v="1">ONLINE</button></div></div>
+    <div id="online" hidden>
+      <div id="netStart">
+        <button class="btn primary" id="hostBtn">CREATE ROOM</button>
+        <span class="or">or join</span>
+        <input id="joinCode" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Room code">
+        <button class="btn" id="joinBtn">JOIN</button>
+      </div>
+      <div id="room" hidden>
+        <div class="room-head"><small>ROOM</small><b id="roomCode">-----</b><button class="btn" id="copyLink">COPY INVITE LINK</button><button class="btn" id="leaveBtn">LEAVE</button></div>
+        <ul id="slots"></ul>
+      </div>
+      <p id="netMsg" class="fine"></p>
+    </div>
+    <div class="opt" data-local><span>PLAYERS ON THIS SCREEN</span><div class="seg" data-key="players"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
+    <div class="opt" data-hostonly><span>LAPS</span><div class="seg" data-key="laps"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
     <div class="opt"><span>GRAPHICS</span><div class="seg" data-key="gfx"><button data-v="1">HIGH</button><button data-v="0">LOW · FAST</button></div></div>
-    <div class="opt"><span>ALIENS</span><div class="seg" data-key="diff"><button data-v="0">EASY</button><button data-v="1">MEAN</button><button data-v="2">INSANE</button></div></div>
+    <div class="opt" data-hostonly><span>ALIENS</span><div class="seg" data-key="diff"><button data-v="0">EASY</button><button data-v="1">MEAN</button><button data-v="2">INSANE</button></div></div>
     <div id="controls"></div>
     <button id="startBtn">START RACE <small>ENTER</small></button>
     <div class="opt"><button class="btn" id="muteBtn">SOUND: ON</button><span>ESC · PAUSE &nbsp; M · SOUND</span></div>
@@ -332,7 +366,7 @@ body.touch #info.solo #standings { display: none; }
   </div>
 </section>
 
-<div id="pause" hidden><div class="card"><h3>PAUSED</h3><button class="btn primary" id="resumeBtn">RESUME</button><button class="btn" id="quitBtn">MAIN MENU</button></div></div>
+<div id="pause" hidden><div class="card"><h3 id="pauseTitle">PAUSED</h3><button class="btn primary" id="resumeBtn">RESUME</button><button class="btn" id="quitBtn">MAIN MENU</button></div></div>
 
 <div id="ending" hidden>
   <div id="endTitle">ALL THREE MADE THE BASEMENT</div>

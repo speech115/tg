@@ -10,7 +10,7 @@ import { build } from 'esbuild';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rd = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const safe = (code) => code.replace(/<\/script/gi, '<\\/script');
-const SCRIPTS = ['util', 'render', 'audio', 'track', 'world', 'entities', 'hud', 'game'];
+const SCRIPTS = ['util', 'render', 'audio', 'track', 'world', 'entities', 'hud', 'game', 'net'];
 const ASSETS = ['kart', 'saucers', 'characters', 'props', 'printer', 'bunker'];
 
 const three = await build({
@@ -49,6 +49,7 @@ html = html.replace(/<script type="importmap">[\s\S]*?<\/script>\n/, '').replace
 html = html.replace('<title>', '<script>window.STANDALONE = true;</script>\n<title>');
 const inline = [
   `<script>${safe(three.outputFiles[0].text)}</script>`,
+  `<script>/* peerjs 1.5.4 (online multiplayer) */\n${safe(fs.readFileSync(path.join(root, 'node_modules/peerjs/dist/peerjs.min.js'), 'utf8').replace(/\n\/\/# sourceMappingURL=.*$/, ''))}</script>`,
   ...SCRIPTS.map((s) => `<script>/* js/${s}.js */\n${safe(rd(`js/${s}.js`))}</script>`),
   `<script>window.ASSET_DATA = {${assetData}};</script>`,
   `<script>${boot}</script>`,

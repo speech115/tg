@@ -57,7 +57,8 @@ const Game = {
     this.newRace({ players: 0, laps: 2, diff: 1, demo: true });
     this.last = performance.now();
     const loop = (now) => {
-      const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now;
+      const dt = clamp((now - this.last) / 1000, 0, 0.05); this.last = now;
+      this.frameAt = performance.now();
       this.frame(dt);
       requestAnimationFrame(loop);
     };
@@ -164,8 +165,13 @@ const Game = {
     });
     const humans = R.cars.filter((c) => c.isHuman).sort((a, b) => a.humanIdx - b.humanIdx);
     R.humans = humans;
-    for (let i = 0; i < cfg.players; i++) { humans[i].local = i; humans[i].ai = false; humans[i].skill = 1; R.local.push(humans[i]); }
-    for (const c of R.cars) c.m.label.visible = cfg.players !== 1 || c.local !== 0;
+    // who drives which human: this screen's players, then online guests (the host runs their karts' world)
+    const onScreen = cfg.net === 'guest' ? [cfg.slot] : [0, 1, 2].slice(0, cfg.players);
+    onScreen.forEach((h, i) => { humans[h].local = i; humans[h].ai = false; humans[h].skill = 1; R.local.push(humans[h]); });
+    R.remote = [];
+    if (cfg.net === 'host') for (const g of Net.racers()) { const c = humans[g.slot]; c.net = g; c.ai = false; c.skill = 1; R.remote.push(c); }
+    R.players = R.local.concat(R.remote);
+    for (const c of R.cars) c.m.label.visible = R.local.length !== 1 || c.local !== 0;
     // pickups
     for (const row of T.itemRows) {
       const r = { s: row.s, boxes: [] };
@@ -187,13 +193,13 @@ const Game = {
     World.setPrinterStatus(0, 3);
     World.portalG.charge = 0;
     World.omegaG.stun = 0;
-    Sound.setEngines(cfg.players);
+    Sound.setEngines(R.local.length);
     this.applyQuality(cfg.gfx ?? (HUD.menuCfg ? HUD.menuCfg.gfx : 1) ?? 1, cfg.players);
     this.resize();
     Sound.intensity = 0;
     this.state = cfg.demo ? 'demo' : 'countdown';
-    HUD.setup(cfg.players, cfg.demo);
-    if (!cfg.demo) {
+    HUD.setup(R.local.length, cfg.demo, R.local.map((c) => c.humanIdx));
+    if (!cfg.demo && cfg.net !== 'guest') {
       Sound.startMusic();
       HUD.say('musk', pick(['My bunker, my rules. The time machine is in the basement. All three of you need to get there.', 'I put this bunker in orbit. Neural chips are on the track. Grab them.']));
     }
@@ -233,7 +239,9 @@ const Game = {
     Sound.tick();
     const R = this.race;
     if (this.paused) { this.render(0); return; }
-    if (this.state === 'demo' || this.state === 'countdown' || this.state === 'race') {
+    if (R.cfg.net === 'guest' && (this.state === 'countdown' || this.state === 'race')) {
+      Net.guestStep(dt);
+    } else if (this.state === 'demo' || this.state === 'countdown' || this.state === 'race') {
       const steps = 2;
       for (let i = 0; i < steps; i++) this.update(dt / steps);
     } else if (this.state === 'ending') {
@@ -251,6 +259,37 @@ const Game = {
     this.shake = Math.max(0, this.shake - dt * 1.8);
     this.render(dt);
     HUD.update(dt, R, this);
+    Net.tick(dt);
+  },
+
+  // an online host whose window is hidden gets no animation frames: keep the race going without drawing
+  headless(dt) {
+    const R = this.race;
+    this.time += dt;
+    if (this.state === 'countdown' || this.state === 'race') { this.update(dt / 2); this.update(dt / 2); }
+    else if (this.state === 'ending') this.updateEnding(dt);
+    for (const c of R.cars) c.syncMesh(dt, this.time);
+    this.syncPickups(dt);
+    Particles.update(dt);
+    Net.tick(dt);
+  },
+
+  // --------------------------------------------------------------- player feedback (this screen or an online guest)
+  isPlayer(car) { return car.local >= 0 || !!car.net; },
+  sfx(car, name) {
+    if (car.local >= 0) Net.quiet(() => Sound.play(name));
+    else if (car.net && !Net.mute) Net.toCar(car, ['snd', name]);
+  },
+  note(car, text, color, dur) {
+    if (car.local >= 0) HUD.msg(car.local, text, color, dur);
+    else if (car.net) Net.toCar(car, ['msg', text, color, dur]);
+  },
+  slow(car, k) { car.v *= k; if (car.net) Net.toCar(car, ['vmul', k]); },
+  // karts driven by online guests: the guest owns their motion, the host keeps timers and dead-reckons
+  netCarStep(car, dt) {
+    car.tick(dt);
+    if (car.finished || this.state !== 'race') return;
+    car.s = Math.min(Track.L - 0.01, car.s + car.v * Math.cos(car.psi) * dt);
   },
 
   readControls(car, dt) {
@@ -264,6 +303,13 @@ const Game = {
         return ai;
       }
       return st;
+    }
+    if (car.net) {
+      // the guest plays OMEGA's hack mini-game on their own screen and reports the result
+      const st = car.netIn || (car.netIn = { gas: 0, brake: 0, steer: 0, fire: false, pressed: {} });
+      const out = Object.assign({}, st);
+      st.pressed = {};
+      return car.hack ? { gas: 0, brake: 0, steer: 0, pressed: {} } : out;
     }
     const c = aiControl(car, dt, R);
     return c;
@@ -285,11 +331,11 @@ const Game = {
         Sound.play('go'); HUD.countdown('GO!');
         HUD.say('musk', 'Three... two... one... GO! Save the past!');
         for (const car of R.cars) {
-          const good = car.local >= 0 ? car.startGas !== undefined && car.startGas < 1.0 : Math.random() < 0.35;
-          if (good) { car.boost(1.3, 1.45); if (car.local >= 0) { HUD.msg(car.local, 'ROCKET START!', '#ffb000'); Sound.play('boost'); } }
+          const good = this.isPlayer(car) ? car.startGas !== undefined && car.startGas !== null && car.startGas < 1.0 : Math.random() < 0.35;
+          if (good) { car.boost(1.3, 1.45); this.note(car, 'ROCKET START!', '#ffb000'); this.sfx(car, 'boost'); }
         }
       }
-      for (const car of R.cars) { car.v = 0; car.update(0, { gas: 0, brake: 0, steer: 0 }); }
+      for (const car of R.cars) if (!car.net) { car.v = 0; car.update(0, { gas: 0, brake: 0, steer: 0 }); }
       return;
     }
     R.t += dt;
@@ -297,15 +343,15 @@ const Game = {
 
     // cars
     for (const car of R.cars) {
-      if (car.finished) { car.update(dt, { gas: 0, brake: 0, steer: 0 }); continue; }
+      if (car.finished) { if (car.net) this.netCarStep(car, dt); else car.update(dt, { gas: 0, brake: 0, steer: 0 }); continue; }
       const c = this.readControls(car, dt);
       // items & weapons
       if (car.roulette > 0) {
         car.roulette -= dt;
-        if (car.local >= 0 && Math.random() < 0.3) Sound.play('roulette');
-        if (car.roulette <= 0) { car.item = rollItem(car.place - 1, R.cars.length, car.isHuman); car.itemCount = car.item === 'nitro3' ? 3 : 1; car.aiItemDelay = rand(0.8, 3.5); if (car.local >= 0) Sound.play('item'); }
+        if (Math.random() < 0.3) this.sfx(car, 'roulette');
+        if (car.roulette <= 0) { car.item = rollItem(car.place - 1, R.cars.length, car.isHuman); car.itemCount = car.item === 'nitro3' ? 3 : 1; car.aiItemDelay = rand(0.8, 3.5); this.sfx(car, 'item'); }
       }
-      if (car.local >= 0 && !car.hack && this.state === 'race') {
+      if (this.isPlayer(car) && !car.hack && this.state === 'race') {
         if (c.pressed && c.pressed.item && car.item) this.useItem(car);
         if (c.fire) this.fire(car, c.pressed && c.pressed.fire);
       } else if (car.ai) this.aiItems(car, dt);
@@ -314,7 +360,7 @@ const Game = {
         const gap = car.progress - R.leadHuman.progress;
         car.skill = car.baseSkill * (1 - clamp(gap / 450, -0.12, 0.12));
       }
-      car.update(dt, c);
+      if (car.net) this.netCarStep(car, dt); else car.update(dt, c);
     }
     this.collideCars();
     this.pickups(dt);
@@ -342,7 +388,7 @@ const Game = {
     const maxLap = Math.max(...R.humans.map((h) => (h.finished ? R.cfg.laps : h.lap)));
     World.portalG.charge = clamp((maxLap + 1) / R.cfg.laps, 0, 1);
     // locals done -> Fable & Astra fetch the stragglers
-    if (this.state === 'race' && R.local.length && R.local.every((c) => c.finished)) {
+    if (this.state === 'race' && R.players.length && R.players.every((c) => c.finished)) {
       if (R.firstLocalDoneT < 0) R.firstLocalDoneT = R.t;
       for (const h of R.humans) if (!h.finished) h.skill = 1.12;
       if (R.t - R.firstLocalDoneT > 22) {
@@ -352,10 +398,13 @@ const Game = {
     if (R.endTimer >= 0) { R.endTimer -= dt; if (R.endTimer < 0 && this.state === 'race') this.startEnding(); }
   },
 
-  collideCars() {
+  // only: an online guest resolves bumps for its own kart; the host never moves guest karts
+  collideCars(only) {
     const cars = this.race.cars, T = Track;
+    const mv = (c) => (only ? c === only : !c.net);
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) {
       const a = cars[i], b = cars[j];
+      if (only && a !== only && b !== only) continue;
       if (a.finished || b.finished || a.falling || b.falling || a.disabledT > 0 || b.disabledT > 0) continue;
       const ds = T.sDiff(a.s, b.s);
       if (Math.abs(ds) > 3.6) continue;
@@ -363,12 +412,13 @@ const Game = {
       if (Math.abs(dd) > 2.7 || Math.abs(a.h - b.h) > 2.5) continue;
       const push = (2.7 - Math.abs(dd)) / 2 + 0.05;
       const sg = dd === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dd);
-      a.d += sg * push; b.d -= sg * push;
+      if (mv(a)) a.d += sg * push;
+      if (mv(b)) b.d -= sg * push;
       if (Math.abs(dd) < 1.6) {
         const back = ds > 0 ? b : a, front = ds > 0 ? a : b;
-        if (back.v > front.v) { const x = (back.v - front.v) * 0.5; back.v -= x; front.v += x * 0.6; }
+        if (back.v > front.v) { const x = (back.v - front.v) * 0.5; if (mv(back)) back.v -= x; if (mv(front)) front.v += x * 0.6; }
       }
-      if (a.local >= 0 || b.local >= 0) { if (Math.random() < 0.2) Sound.play('bump'); }
+      if (a.local >= 0 || b.local >= 0) { if (Math.random() < 0.2) Net.quiet(() => Sound.play('bump')); }
     }
   },
 
@@ -378,32 +428,27 @@ const Game = {
     if (!item) return;
     car.itemCount--;
     if (car.itemCount <= 0) car.item = null;
-    const loud = car.local >= 0;
     switch (item) {
       case 'nitro': case 'nitro3':
-        car.boost(1.3, 1.42); if (loud) Sound.play('boost'); break;
+        car.boost(1.3, 1.42); this.sfx(car, 'boost'); break;
       case 'slime': {
-        const m = new THREE.Mesh(new THREE.CircleGeometry(2.4, 20), glowMat(0x7dff5a, 0.75));
-        this.add(m);
+        const m = this.add(this.slimeMesh());
         R.hazards.push({ kind: 'slime', s: car.s - 4.5, d: car.d, life: 30, owner: car, grace: 0.8, m });
-        if (loud) Sound.play('slime');
+        this.sfx(car, 'slime');
         break;
       }
       case 'rocket': {
         const target = this.carAhead(car);
-        const m = World.rocket(0.42); this.add(m);
+        const m = this.add(this.projMesh('rocket'));
         R.proj.push({ kind: 'rocket', s: car.s + 3, d: car.d, h: 1.2, v: Math.max(car.v + 55, 95), owner: car, life: 7, target, m });
         Sound.play('rocket');
         if (car.isHuman && Math.random() < 0.5) HUD.say('musk', pick(['Rocket away. It might come back. Kidding.', 'Reusable? No. This one is single-use.']));
         break;
       }
       case 'gbomb': {
-        const m = new THREE.Group();
-        m.add(new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshLambertMaterial({ color: 0x20304a, emissive: 0x1050a0 })));
-        m.add(glowSprite(0x58b4ff, 5));
-        this.add(m);
+        const m = this.add(this.projMesh('gbomb'));
         R.proj.push({ kind: 'gbomb', s: car.s + 3, d: car.d, h: 2, vh: 9, v: car.v + 35, owner: car, life: 3, m, fuse: -1 });
-        if (loud) Sound.play('whoosh');
+        this.sfx(car, 'whoosh');
         break;
       }
       case 'shield':
@@ -429,23 +474,21 @@ const Game = {
       if (car.fireCd > 0) return;
       const W = WEAPONS[car.weapon];
       car.fireCd = W.rate; car.ammo--;
+      const m = this.add(this.projMesh(car.weapon));
       if (car.weapon === 'laser') {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 3.2), glowMat(0xff3b3b, 1)); this.add(m);
         R.proj.push({ kind: 'laser', s: car.s + 2.5, d: car.d + (car.ammo % 2 ? 0.25 : -0.25), h: car.h + 1.2, v: car.v + 170, owner: car, life: 0.9, m });
         Sound.play('laser');
       } else if (car.weapon === 'rail') {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 7), glowMat(0x61e8ff, 1)); this.add(m);
         R.proj.push({ kind: 'rail', s: car.s + 3, d: car.d, h: car.h + 1.2, v: car.v + 260, owner: car, life: 0.8, m, pierce: true, hitSet: new Set() });
         Sound.play('rail'); this.shake = Math.max(this.shake, 0.3);
       } else {
-        const m = World.rocket(0.22); this.add(m);
         R.proj.push({ kind: 'swarm', s: car.s + 2, d: car.d + rand(-1.5, 1.5), h: car.h + 1.6, v: car.v + 80, owner: car, life: 3, m, target: this.swarmTarget(car) });
         Sound.play('rocket');
       }
-      if (car.ammo <= 0) { car.weapon = null; if (car.local >= 0) HUD.msg(car.local, 'OUT OF AMMO', '#7d849a'); }
+      if (car.ammo <= 0) { car.weapon = null; this.note(car, 'OUT OF AMMO', '#7d849a'); }
     } else if (pressed && car.neuro >= 1) {
       car.neuro = 0; car.neuroT = 3.2;
-      if (car.local >= 0) { Sound.play('boost'); Sound.play('chip'); HUD.msg(car.local, 'NEURO FOCUS!', '#ff4fd8'); }
+      this.sfx(car, 'boost'); this.sfx(car, 'chip'); this.note(car, 'NEURO FOCUS!', '#ff4fd8');
     }
   },
   swarmTarget(car) {
@@ -520,7 +563,7 @@ const Game = {
             const ok = car.hit(dur, { launch: p.kind === 'rocket' ? 9 : 0, keep: p.kind === 'laser' ? 0.7 : 0.4 });
             this.fx.explode(car.pos, p.kind === 'rocket' ? 0xffa040 : WEAPONS[p.kind] ? WEAPONS[p.kind].color : 0xff6040, p.kind === 'laser' ? 0.6 : 1.4);
             if (ok && p.owner.isHuman) p.owner.stats.kills++;
-            if (ok && p.owner.local >= 0 && !car.isHuman) HUD.msg(p.owner.local, `HIT: ${car.name}`, '#ffb000', 0.8);
+            if (ok && !car.isHuman) this.note(p.owner, `HIT: ${car.name}`, '#ffb000', 0.8);
             if (p.hitSet) p.hitSet.add(car); else { dead = true; break; }
           }
         }
@@ -531,7 +574,7 @@ const Game = {
             if (dr.phase !== 'chase') continue;
             if (Math.abs(T.sDiff(dr.s, p.s)) < 3.5 && Math.abs(T.dDiff(dr.d, p.d, p.s)) < 3.2) {
               this.killDrone(k, true);
-              if (p.owner.local >= 0) HUD.msg(p.owner.local, 'OMEGA DRONE DOWN!', '#ffb000', 1);
+              this.note(p.owner, 'OMEGA DRONE DOWN!', '#ffb000', 1);
               p.owner.stats.kills++;
               if (!p.hitSet) { dead = true; break; }
             }
@@ -539,17 +582,30 @@ const Game = {
         }
         if (T.isGap(p.s) && p.h < 0.5) dead = true;
       }
-      // mesh
-      T.place(p.s, p.d, p.h, pl);
-      p.m.position.copy(pl.p);
-      p.m.up.copy(pl.up);
-      p.m.lookAt(pl.p.x + pl.fwd.x, pl.p.y + pl.fwd.y, pl.p.z + pl.fwd.z);
-      if (p.kind === 'rocket' || p.kind === 'swarm') {
-        Particles.spawn(pl.p.clone().addScaledVector(pl.fwd, -2), new V3(rand(-1, 1), rand(-1, 1), rand(-1, 1)), 0xffa040, p.kind === 'rocket' ? 2.4 : 1.2, 0.4, { grow: 2 });
-      }
+      this.placeProj(p);
       if (dead) { this.scene.remove(p.m); R.proj.splice(i, 1); }
     }
   },
+  placeProj(p) {
+    const pl = this.pl;
+    Track.place(p.s, p.d, p.h, pl);
+    p.m.position.copy(pl.p);
+    p.m.up.copy(pl.up);
+    p.m.lookAt(pl.p.x + pl.fwd.x, pl.p.y + pl.fwd.y, pl.p.z + pl.fwd.z);
+    if (p.kind === 'rocket' || p.kind === 'swarm') {
+      Particles.spawn(pl.p.clone().addScaledVector(pl.fwd, -2), new V3(rand(-1, 1), rand(-1, 1), rand(-1, 1)), 0xffa040, p.kind === 'rocket' ? 2.4 : 1.2, 0.4, { grow: 2 });
+    }
+  },
+  projMesh(kind) {
+    if (kind === 'laser') return new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 3.2), glowMat(0xff3b3b, 1));
+    if (kind === 'rail') return new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 7), glowMat(0x61e8ff, 1));
+    if (kind === 'rocket' || kind === 'swarm') return World.rocket(kind === 'rocket' ? 0.42 : 0.22);
+    const m = new THREE.Group();
+    m.add(new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshLambertMaterial({ color: 0x20304a, emissive: 0x1050a0 })));
+    m.add(glowSprite(0x58b4ff, 5));
+    return m;
+  },
+  slimeMesh() { return new THREE.Mesh(new THREE.CircleGeometry(2.4, 20), glowMat(0x7dff5a, 0.75)); },
   gravityBlast(p) {
     const R = this.race, T = Track;
     T.place(p.s, p.d, 1, this.pl);
@@ -561,7 +617,7 @@ const Game = {
       if (car === p.owner || car.finished) continue;
       if (Math.abs(T.sDiff(car.s, p.s)) < 14 && Math.abs(T.dDiff(car.d, p.d, p.s)) < 13) {
         car.hit(1.0, { launch: 13, keep: 0.55 });
-        if (car.local >= 0) HUD.msg(car.local, 'GRAVITY BOMB!', '#58b4ff');
+        this.note(car, 'GRAVITY BOMB!', '#58b4ff');
       }
     }
   },
@@ -574,18 +630,21 @@ const Game = {
       for (const car of R.cars) {
         if (car.finished || car.airborne || (car === hz.owner && hz.grace > 0)) continue;
         if (Math.abs(T.sDiff(car.s, hz.s)) < 2.4 && Math.abs(T.dDiff(car.d, hz.d, hz.s)) < 2.6) {
-          if (car.hit(1.1, { keep: 0.5 })) { if (car.local >= 0) { Sound.play('slime'); HUD.msg(car.local, 'PLASMA SLIME!', '#7dff5a', 0.8); } }
+          if (car.hit(1.1, { keep: 0.5 })) { this.sfx(car, 'slime'); this.note(car, 'PLASMA SLIME!', '#7dff5a', 0.8); }
           dead = true; break;
         }
       }
-      T.place(hz.s, hz.d, 0.12, this.pl);
-      hz.m.position.copy(this.pl.p);
-      hz.m.lookAt(this.pl.p.x + this.pl.up.x, this.pl.p.y + this.pl.up.y, this.pl.p.z + this.pl.up.z);
-      hz.m.material.opacity = 0.55 + Math.sin(this.time * 6 + i) * 0.2;
+      this.placeHazard(hz, i);
       if (dead) { this.scene.remove(hz.m); R.hazards.splice(i, 1); }
     }
   },
 
+  placeHazard(hz, i) {
+    Track.place(hz.s, hz.d, 0.12, this.pl);
+    hz.m.position.copy(this.pl.p);
+    hz.m.lookAt(this.pl.p.x + this.pl.up.x, this.pl.p.y + this.pl.up.y, this.pl.p.z + this.pl.up.z);
+    hz.m.material.opacity = 0.55 + Math.sin(this.time * 6 + i) * 0.2;
+  },
   pickups(dt) {
     const R = this.race, T = Track;
     for (const car of R.cars) {
@@ -598,7 +657,7 @@ const Game = {
           if (!car.item && car.roulette <= 0) car.roulette = 1.1;
           T.place(row.s, b.d, 1.2, this.pl);
           Particles.burst(this.pl.p, 0xffb000, 18, 14, 1.4, 0.5);
-          if (car.local >= 0) Sound.play('pickup');
+          this.sfx(car, 'pickup');
         }
       }
       if (car.isHuman) {
@@ -609,31 +668,34 @@ const Game = {
             car.stats.chips++;
             if (car.bci < 3) {
               car.bci++;
-              if (car.local >= 0) HUD.msg(car.local, `BCI LEVEL ${car.bci} · +SPEED`, '#ff7ad9', 2);
-              if (car.bci === 1 && car.local >= 0) HUD.say('musk', `${car.name}, your neural interface is online. Press FIRE when the NEURO bar is full.`);
-            } else { car.neuro = 1; if (car.local >= 0) HUD.msg(car.local, 'NEURO BAR CHARGED', '#ff7ad9'); }
+              this.note(car, `BCI LEVEL ${car.bci} · +SPEED`, '#ff7ad9', 2);
+              if (car.bci === 1 && this.isPlayer(car)) HUD.say('musk', `${car.name}, your neural interface is online. Press FIRE when the NEURO bar is full.`);
+            } else { car.neuro = 1; this.note(car, 'NEURO BAR CHARGED', '#ff7ad9'); }
             T.place(ch.s, ch.d, ch.h, this.pl);
             Particles.burst(this.pl.p, 0xff4fd8, 40, 18, 1.6, 0.8);
-            if (car.local >= 0) Sound.play('chip');
+            this.sfx(car, 'chip');
           }
         }
       }
-      // pads
-      if (car.padCd <= 0 && car.h < 1) {
-        for (const b of T.boosts) {
-          const ds = T.sDiff(car.s, b.s);
-          if (ds > -7.5 && ds < 0.5 && Math.abs(T.dDiff(car.d, b.d, b.s)) < 3.4) {
-            car.boost(1.1, 1.42); car.padCd = 0.6;
-            if (car.local >= 0) Sound.play('boost');
-          }
-        }
-        for (const p of T.pads) {
-          const ds = T.sDiff(car.s, p.s);
-          if (ds > -8.5 && ds < 0.5 && car.d > p.d0 - 1 && car.d < p.d1 + 1 && !car.airborne) {
-            car.vh = p.v; car.h = 0.05; car.airborne = true; car.padCd = 0.8; car.drift = 0;
-            if (car.local >= 0) { Sound.play('jump'); if (p.v > 9) HUD.msg(car.local, 'LOW GRAVITY: FLY!', '#58b4ff', 1.2); }
-          }
-        }
+      if (!car.net) this.pads(car);
+    }
+  },
+  // boost and jump pads (an online guest runs these for its own kart)
+  pads(car) {
+    const T = Track;
+    if (car.padCd > 0 || car.h >= 1) return;
+    for (const b of T.boosts) {
+      const ds = T.sDiff(car.s, b.s);
+      if (ds > -7.5 && ds < 0.5 && Math.abs(T.dDiff(car.d, b.d, b.s)) < 3.4) {
+        car.boost(1.1, 1.42); car.padCd = 0.6;
+        this.sfx(car, 'boost');
+      }
+    }
+    for (const p of T.pads) {
+      const ds = T.sDiff(car.s, p.s);
+      if (ds > -8.5 && ds < 0.5 && car.d > p.d0 - 1 && car.d < p.d1 + 1 && !car.airborne) {
+        car.vh = p.v; car.h = 0.05; car.airborne = true; car.padCd = 0.8; car.drift = 0;
+        this.sfx(car, 'jump'); if (p.v > 9) this.note(car, 'LOW GRAVITY: FLY!', '#58b4ff', 1.2);
       }
     }
   },
@@ -673,11 +735,11 @@ const Game = {
       if (O.aim.t <= 0 || car.finished) {
         this.scene.remove(O.aim.beam);
         if (!car.finished && !car.hack && car.aiHackT <= 0) {
-          if (car.shieldT > 0) { this.fx.shieldBlock(car); if (car.local >= 0) HUD.msg(car.local, 'SHIELD BLOCKED THE HACK!', '#61e8ff'); }
+          if (car.shieldT > 0) { this.fx.shieldBlock(car); this.note(car, 'SHIELD BLOCKED THE HACK!', '#61e8ff'); }
           else if (Math.random() < 0.28) {
             this.fx.guardZap(car, car.pos);
             HUD.say(pick(['fable', 'astra']), pick([`OMEGA beam deflected! ${car.name}, you are clean.`, 'Hack packet intercepted. Carry on!', 'Fable holds the firewall, I cover the tracks. Clean!']));
-            if (car.local >= 0) HUD.msg(car.local, 'FABLE AND ASTRA BLOCKED THE HACK', '#ffb347');
+            this.note(car, 'FABLE AND ASTRA BLOCKED THE HACK', '#ffb347');
           } else this.startHack(car);
         }
         O.aim = null;
@@ -692,7 +754,7 @@ const Game = {
           const beam = new THREE.Mesh(this.shared.beamGeo, glowMat(0xff2a3d, 0.8));
           this.add(beam);
           O.aim = { car, t: 1.9, beam };
-          if (car.local >= 0) { Sound.play('alarm'); HUD.msg(car.local, 'OMEGA IS LOCKING ON!', '#ff2a3d', 1.9); }
+          this.sfx(car, 'alarm'); this.note(car, 'OMEGA IS LOCKING ON!', '#ff2a3d', 1.9);
           if (O.sayCd <= 0) { HUD.say('omega', pick(['HUMAN DETECTED. HACK INITIATED.', `${car.name}. YOUR VEHICLE IS MINE NOW.`, 'RESISTANCE IS INEFFICIENT.', 'THE BASEMENT IS CLOSED TO HUMANS.'])); O.sayCd = 8; }
         }
         O.hackCd = rand(20, 30);
@@ -704,22 +766,23 @@ const Game = {
       const tgt = pick(alive);
       const m = this.droneMesh(); this.add(m);
       R.drones.push({ s: tgt.s - 70, d: tgt.d, h: 7, target: tgt, phase: 'in', t: 0, life: 24, m, rolled: false, from: World.omegaG.g.position.clone() });
-      if (tgt.local >= 0) HUD.msg(tgt.local, 'OMEGA DRONE ON YOUR TAIL', '#ff2a3d', 1.6);
+      this.note(tgt, 'OMEGA DRONE ON YOUR TAIL', '#ff2a3d', 1.6);
       O.droneCd = rand(11, 17);
     }
   },
   startHack(car) {
     car.stats.hacks++;
     this.fx.explode(car.pos, 0xff2a3d, 0.8);
-    if (car.local >= 0) {
+    if (this.isPlayer(car)) {
       const seq = Math.random() < 0.6;
       const len = Math.max(3, 6 - car.bci);
       car.hack = seq
         ? { type: 'seq', seq: Array.from({ length: len }, () => pick(['up', 'down', 'left', 'right'])), idx: 0, timer: 8, assist: 2.4 - car.bci * 0.3, shake: 0, helped: [] }
         : { type: 'timing', needle: 0, dir: 1, zone: rand(0.15, 0.65), width: 0.16 + car.bci * 0.03, hits: 0, need: 3, timer: 8, shake: 0 };
       car.drift = 0;
-      Sound.play('alarm');
-      HUD.msg(car.local, 'HACKED!', '#ff2a3d', 1);
+      if (car.net) Net.toCar(car, ['hack', car.hack]);
+      this.sfx(car, 'alarm');
+      this.note(car, 'HACKED!', '#ff2a3d', 1);
     } else {
       car.aiHackT = 3.5 - car.bci * 0.5;
     }
@@ -728,16 +791,8 @@ const Game = {
     const hk = car.hack;
     hk.timer -= dt; hk.shake = Math.max(0, hk.shake - dt);
     const done = (ok) => {
-      car.hack = null;
-      if (ok) {
-        car.invulnT = 1.2; car.neuro = Math.min(1, car.neuro + 0.4); car.boost(0.9, 1.35);
-        car.stats.hacksBeaten++;
-        Sound.play('hackok'); HUD.msg(car.local, 'HACK REPELLED!', '#35ff80', 1.4);
-        if (Math.random() < 0.6) HUD.say(pick(['fable', 'astra']), pick([`${car.name} is back in control. Beautiful!`, 'Firewall restored. OMEGA is furious.', 'Together with humans we beat any superintelligence.']));
-      } else {
-        car.stallT = 2.2; car.v *= 0.3;
-        Sound.play('hackbad'); HUD.msg(car.local, 'SYSTEM REBOOTED', '#ff2a3d', 2);
-      }
+      if (Net.role === 'guest') { car.hack = null; Net.send({ t: 'H', ok }); return; } // the host applies the outcome
+      this.endHack(car, ok);
     };
     if (hk.timer <= 0) return done(false);
     if (hk.type === 'seq') {
@@ -759,6 +814,18 @@ const Game = {
         else { hk.shake = 0.3; Sound.play('wrong'); }
       }
       if (hk.hits >= hk.need) done(true);
+    }
+  },
+  endHack(car, ok) {
+    car.hack = null;
+    if (ok) {
+      car.invulnT = 1.2; car.neuro = Math.min(1, car.neuro + 0.4); car.boost(0.9, 1.35);
+      car.stats.hacksBeaten++;
+      this.sfx(car, 'hackok'); this.note(car, 'HACK REPELLED!', '#35ff80', 1.4);
+      if (Math.random() < 0.6) HUD.say(pick(['fable', 'astra']), pick([`${car.name} is back in control. Beautiful!`, 'Firewall restored. OMEGA is furious.', 'Together with humans we beat any superintelligence.']));
+    } else {
+      car.stallT = 2.2; this.slow(car, 0.3);
+      this.sfx(car, 'hackbad'); this.note(car, 'SYSTEM REBOOTED', '#ff2a3d', 2);
     }
   },
   updateDrones(dt) {
@@ -802,7 +869,7 @@ const Game = {
           this.killDrone(i, true);
           h.guardCd = 12;
           if (Math.random() < 0.5) HUD.say(pick(['fable', 'astra']), pick(['Drone neutralized. You are welcome.', 'Astra, your left! Got it. Clear.', 'One less OMEGA drone.', 'Fable and Astra on guard. Drive easy.']));
-          if (h.local >= 0) HUD.msg(h.local, 'FABLE AND ASTRA DOWNED A DRONE', '#ffb347', 1.2);
+          this.note(h, 'FABLE AND ASTRA DOWNED A DRONE', '#ffb347', 1.2);
         } else h.guardCd = 3;
         break;
       }
@@ -824,6 +891,7 @@ const Game = {
       else return;
     }
     const sp = Math.min(57, 36 + R.t * 0.1) * (0.85 + 0.15 * R.diff.omega);
+    W.sp = R.omega.stun > 0 ? sp * 0.5 : sp;
     W.p += sp * dt;
     if (W.p < minP - 420) W.p = minP - 420;
     if (R.omega.stun > 0) W.p -= sp * dt * 0.5;
@@ -833,11 +901,14 @@ const Game = {
         if (h.shieldT > 0) this.fx.shieldBlock(h); else this.startHack(h);
         W.p = h.progress - 160;
         this.fx.guardZap(h, h.pos);
-        if (h.local >= 0) HUD.msg(h.local, 'THE OMEGA WAVE CAUGHT YOU!', '#ff2a3d', 1.5);
+        this.note(h, 'THE OMEGA WAVE CAUGHT YOU!', '#ff2a3d', 1.5);
         HUD.say(pick(['fable', 'astra']), pick(['Pushing the wave back! Hold on!', 'Wave pushed back. Floor it!']));
       }
     }
-    // mesh
+    this.placeWave();
+  },
+  placeWave() {
+    const W = this.race.wave, T = Track;
     const s = mod(W.p, T.L);
     const f = T.frame(s);
     W.mesh.visible = W.p > -T.L;
@@ -859,7 +930,7 @@ const Game = {
       M.mesh.visible = false;
       M.cd -= dt;
       if (M.cd <= 0 && alive.length && R.t > 6) {
-        const locals = alive.filter((h) => h.local >= 0);
+        const locals = alive.filter((h) => this.isPlayer(h));
         const pool = locals.length && Math.random() < 0.75 ? locals : alive;
         pool.sort((a, b) => b.place - a.place);
         M.target = Math.random() < 0.6 ? pool[0] : pick(pool);
@@ -885,22 +956,37 @@ const Game = {
       M.s += 70 * dt; M.h += 22 * dt;
       if (M.outT <= 0) { M.state = 'away'; M.cd = rand(13, 20); }
     }
-    T.place(M.s, M.d, M.h, this.pl);
+    this.placeMcAfee();
+  },
+  placeMcAfee() {
+    const M = this.race.mc;
+    Track.place(M.s, M.d, M.h, this.pl);
     M.mesh.position.copy(this.pl.p);
     M.mesh.up.copy(this.pl.up);
     M.mesh.lookAt(this.pl.p.clone().sub(this.pl.fwd));
     const arms = M.mesh.userData.person.userData.arms;
     arms[1].rotation.z = Math.PI - 0.4 + Math.sin(this.time * 9) * 0.5;
   },
-  dropCrate(s, d, h) {
+  crateMesh() {
     const m = new THREE.Group();
     const crate = asset('props', 'Crate');
     m.add(crate);
     const chute = crate.getObjectByName('Chute') || new THREE.Group();
     const beacon = glowSprite(0xffd000, 5, 1, 2.5); beacon.position.y = 1.6; m.add(beacon);
     this.add(m);
-    this.race.crates.push({ s, d, h, life: 30, m, chute, beacon });
+    return { m, chute, beacon };
+  },
+  dropCrate(s, d, h) {
+    this.race.crates.push(Object.assign({ s, d, h, life: 30 }, this.crateMesh()));
     Sound.play('crate');
+  },
+  placeCrate(c) {
+    c.chute.visible = c.h > 1.3;
+    c.beacon.material.opacity = Math.floor(this.time * 6) % 2 ? 1 : 0.3;
+    Track.place(c.s, c.d, c.h, this.pl);
+    c.m.position.copy(this.pl.p);
+    c.m.up.copy(this.pl.up);
+    c.m.lookAt(this.pl.p.clone().add(this.pl.fwd));
   },
   updateCrates(dt) {
     const R = this.race, T = Track;
@@ -908,12 +994,7 @@ const Game = {
       const c = R.crates[i];
       c.life -= dt;
       c.h = Math.max(T.isGap(c.s) ? -30 : 1.2, c.h - 9 * dt);
-      c.chute.visible = c.h > 1.3;
-      c.beacon.material.opacity = Math.floor(this.time * 6) % 2 ? 1 : 0.3;
-      T.place(c.s, c.d, c.h, this.pl);
-      c.m.position.copy(this.pl.p);
-      c.m.up.copy(this.pl.up);
-      c.m.lookAt(this.pl.p.clone().add(this.pl.fwd));
+      this.placeCrate(c);
       let dead = c.life <= 0 || c.h < -25;
       for (const car of R.humans) {
         if (dead || car.finished) continue;
@@ -921,15 +1002,15 @@ const Game = {
           car.stats.crates++;
           if (Math.random() < 0.05) {
             car.item = 'kill'; car.itemCount = 1;
-            if (car.local >= 0) HUD.msg(car.local, 'KILL SWITCH IN THE CRATE!!!', '#ff2a3d', 3);
+            this.note(car, 'KILL SWITCH IN THE CRATE!!!', '#ff2a3d', 3);
             HUD.say('mcafee', 'I packed something special in this one. A red button. Do not press it for fun!');
           } else {
             const w = pick(Object.keys(WEAPONS));
             car.weapon = w; car.ammo = WEAPONS[w].ammo; car.fireCd = 0;
-            if (car.local >= 0) HUD.msg(car.local, `McAFEE GUN: ${WEAPONS[w].name} ×${car.ammo}`, '#ffd000', 2);
+            this.note(car, `McAFEE GUN: ${WEAPONS[w].name} ×${car.ammo}`, '#ffd000', 2);
           }
           Particles.burst(c.m.position, 0xffd000, 30, 14, 1.4, 0.6);
-          if (car.local >= 0) Sound.play('pickup');
+          this.sfx(car, 'pickup');
           dead = true;
         }
       }
@@ -966,14 +1047,16 @@ const Game = {
   // --------------------------------------------------------------- events
   onLap(car) {
     const R = this.race;
+    if (R.cfg.net === 'guest') return; // laps and finishes are decided by the host
     car.lastLapT = R.t;
     if (car.lap >= R.cfg.laps) { this.finish(car); return; }
     if (car.lap <= 0) return;
-    if (car.local >= 0) {
+    if (this.isPlayer(car)) {
       const last = car.lap === R.cfg.laps - 1;
-      HUD.msg(car.local, last ? 'FINAL LAP! THE BASEMENT AWAITS' : `LAP ${car.lap + 1}/${R.cfg.laps}`, last ? '#ff2a3d' : '#ffb000', 2);
-      Sound.play('lap');
-      if (last) Sound.intensity = 2; else Sound.intensity = Math.max(Sound.intensity, 1);
+      this.note(car, last ? 'FINAL LAP! THE BASEMENT AWAITS' : `LAP ${car.lap + 1}/${R.cfg.laps}`, last ? '#ff2a3d' : '#ffb000', 2);
+      this.sfx(car, 'lap');
+      if (car.net) Net.toCar(car, ['music', last ? 2 : 1]);
+      else if (last) Sound.intensity = 2; else Sound.intensity = Math.max(Sound.intensity, 1);
     }
     if (car.isHuman && car.lap === R.cfg.laps - 1 && Math.random() < 0.8) {
       const who = pick(['trump', 'biden', 'zelensky', 'xi']);
@@ -987,6 +1070,7 @@ const Game = {
     car.finished = true; car.finishOrder = ++R.finishCount; car.finishTime = R.t;
     car.hack = null; car.aiHackT = 0; car.finishFade = 1;
     World.portalG.flash = 1;
+    Net.all(['portal']);
     const f = Track.frame(0);
     Particles.burst(f.P.clone().addScaledVector(f.U, 6), car.color, 80, 25, 2.5, 1.2, { drag: 1.5 });
     if (this.state === 'demo') return;
@@ -994,7 +1078,7 @@ const Game = {
       R.humansDone++;
       World.setPrinterStatus(R.humansDone, 3);
       Sound.play('finish');
-      if (car.local >= 0) HUD.msg(car.local, `${HUD.ordinal(car.place)} PLACE · YOU MADE THE BASEMENT!`, '#35e0ff', 4);
+      this.note(car, `${HUD.ordinal(car.place)} PLACE · YOU MADE THE BASEMENT!`, '#35e0ff', 4);
       const who = pick(['trump', 'biden', 'zelensky', 'xi']);
       World.cheer();
       HUD.say(who, pick(FINISH_LINES[who]).replace('%', car.name));
@@ -1009,7 +1093,7 @@ const Game = {
     const T = Track; T.place(car.s, 0, 3, this.pl);
     if (car.isHuman) {
       this.fx.guardZap(car, this.pl.p.clone());
-      if (car.local >= 0) HUD.msg(car.local, 'FABLE AND ASTRA PULLED YOU OUT OF THE VOID', '#ffb347', 2);
+      this.note(car, 'FABLE AND ASTRA PULLED YOU OUT OF THE VOID', '#ffb347', 2);
     }
     Particles.burst(this.pl.p, car.isHuman ? 0xffb347 : car.color, 40, 10, 2, 0.8);
   },
@@ -1036,7 +1120,7 @@ const Game = {
     },
     shieldBlock(car) {
       Particles.burst(car.pos, 0x61e8ff, 40, 16, 1.6, 0.6, { drag: 2 });
-      if (car.local >= 0) Sound.play('shield');
+      Game.sfx(car, 'shield');
     },
     guardZap(car, at) {
       const m = car.m.orbs;
@@ -1194,6 +1278,7 @@ const Game = {
   // --------------------------------------------------------------- ending
   startEnding() {
     const R = this.race;
+    if (R.cfg.net === 'host') Net.ending(R);
     this.state = 'ending';
     R.ended = true;
     this.endT = 0;
@@ -1318,6 +1403,7 @@ const Game = {
 
   start(cfg) {
     Sound.init();
+    if (Net.role === 'host' && cfg.mode) { cfg = Object.assign({}, cfg, { players: 1, net: 'host' }); Net.startRace(cfg); }
     this.resultsShown = false;
     World.portalG.label.visible = true;
     World.printerG.label.visible = true;
@@ -1325,6 +1411,7 @@ const Game = {
     this.newRace(cfg);
   },
   toMenu() {
+    if (Net.role === 'host' && this.race && this.race.cfg.net === 'host') Net.backToLobby();
     this.resultsShown = false;
     World.portalG.label.visible = true;
     World.printerG.label.visible = true;

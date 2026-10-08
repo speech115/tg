@@ -174,7 +174,10 @@ class Car {
   }
   get progress() { return this.lap * Track.L + this.s; }
   get controllable() { return this.spinT <= 0 && this.stallT <= 0 && this.disabledT <= 0 && !this.falling; }
-  boost(t, k = 1.38) { this.boostT = Math.max(this.boostT, t); this.boostK = Math.max(k, this.boostT > t ? this.boostK : k); }
+  boost(t, k = 1.38) {
+    this.boostT = Math.max(this.boostT, t); this.boostK = Math.max(k, this.boostT > t ? this.boostK : k);
+    if (this.net) Net.toCar(this, ['boost', t, k]); // an online guest drives this kart on their machine
+  }
   hit(dur = 1.1, o = {}) {
     if (this.invulnT > 0 || this.finished || this.disabledT > 0) return false;
     if (this.shieldT > 0) { Game.fx.shieldBlock(this); return false; }
@@ -184,7 +187,8 @@ class Car {
     if (o.launch) { this.vh = o.launch; this.airborne = true; }
     this.drift = 0; this.driftCharge = 0;
     this.stats.hits++;
-    if (this.local >= 0) Sound.play('spin');
+    Game.sfx(this, 'spin');
+    if (this.net) Net.toCar(this, ['hit', dur, o.keep !== undefined ? o.keep : 0.45, o.launch || 0]);
     return true;
   }
 
@@ -193,11 +197,8 @@ class Car {
     if (this.finished) { this.v = damp(this.v, 0, 1, dt); }
     let gas = c.gas, brake = c.brake, steer = c.steer;
     if (!this.controllable || this.finished) { gas = 0; brake = 0; steer = 0; }
-    this.spinT -= dt; this.stallT -= dt; this.invulnT -= dt; this.shieldT -= dt; this.padCd -= dt; this.wallCd -= dt;
-    this.fireCd -= dt; this.guardCd -= dt; this.disabledT -= dt;
+    this.tick(dt);
     if (this.spinT > 0) this.spinA += dt * 14; else this.spinA = damp(this.spinA, Math.round(this.spinA / TAU) * TAU, 10, dt);
-    if (this.boostT > 0) { this.boostT -= dt; if (this.boostT <= 0) this.boostK = 1; }
-    if (this.neuroT > 0) this.neuroT -= dt;
 
     const g = T.gravity(this.s);
     const heavy = T.heavyF(this.s);
@@ -219,7 +220,7 @@ class Car {
     if (this.drift !== 0) {
       if (!c.drift || this.v < 18 || !this.controllable) {
         const lvl = this.driftCharge > 2.1 ? 3 : this.driftCharge > 1.3 ? 2 : this.driftCharge > 0.65 ? 1 : 0;
-        if (lvl) { this.boost(0.35 + lvl * 0.35, 1.25 + lvl * 0.06); if (this.local >= 0) Sound.play('boost'); }
+        if (lvl) { this.boost(0.35 + lvl * 0.35, 1.25 + lvl * 0.06); Game.sfx(this, 'boost'); }
         this.drift = 0; this.driftCharge = 0;
       } else {
         this.driftCharge += dt * (Math.sign(steer) === this.drift ? 1.25 : 0.6);
@@ -261,7 +262,7 @@ class Car {
       this.h += this.vh * dt;
       if (this.h <= 0) {
         if (onGap) { this.falling = true; this.stats.falls++; }
-        else { if (this.vh < -16 && this.local >= 0) Sound.play('bump'); this.h = 0; this.vh = 0; this.airborne = false; this.driftHop = 0; }
+        else { if (this.vh < -16) Game.sfx(this, 'bump'); this.h = 0; this.vh = 0; this.airborne = false; this.driftHop = 0; }
       }
     } else if (onGap) { this.falling = true; this.vh = -2; this.stats.falls++; }
     else { this.airborne = false; this.h = 0; }
@@ -278,11 +279,17 @@ class Car {
           this.wallCd = 0.25;
           this.psi *= -0.3;
           Game.fx.sparks(this, Math.sign(this.d));
-          if (this.local >= 0) Sound.play('bump');
+          Game.sfx(this, 'bump');
         }
       }
     }
-    // neuro meter fills with BCI level
+  }
+  // timers and the neuro meter (also run by the host for karts that online guests drive)
+  tick(dt) {
+    this.spinT -= dt; this.stallT -= dt; this.invulnT -= dt; this.shieldT -= dt; this.padCd -= dt; this.wallCd -= dt;
+    this.fireCd -= dt; this.guardCd -= dt; this.disabledT -= dt;
+    if (this.boostT > 0) { this.boostT -= dt; if (this.boostT <= 0) this.boostK = 1; }
+    if (this.neuroT > 0) this.neuroT -= dt;
     if (this.bci > 0 && this.neuroT <= 0) this.neuro = Math.min(1, this.neuro + dt * 0.035 * this.bci);
   }
 

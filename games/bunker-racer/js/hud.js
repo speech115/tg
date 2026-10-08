@@ -34,7 +34,7 @@ const HUD = {
     this.mmCtx = this.mm.getContext('2d');
     this.prepMinimap();
     // menu wiring
-    const cfg = { players: 1, laps: 3, diff: 1, gfx: 1 };
+    const cfg = { players: 1, laps: 3, diff: 1, gfx: 1, mode: 0 };
     try { Object.assign(cfg, JSON.parse(localStorage.getItem('bunker0cfg') || '{}')); } catch (_) {}
     this.menuCfg = cfg;
     document.querySelectorAll('.seg').forEach((seg) => {
@@ -44,41 +44,49 @@ const HUD = {
         b.addEventListener('click', () => {
           seg.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
           b.classList.add('on'); cfg[key] = +b.dataset.v;
+          if (key === 'mode' && !cfg.mode && Net.role) Net.leave(true);
+          if (Net.role === 'host') Net.lobbyAll();
           this.renderControls();
+          this.renderOnline();
         });
       });
     });
     this.renderControls();
+    this.setupOnline();
     this.$('startBtn').addEventListener('click', () => this.start());
-    this.$('againBtn').addEventListener('click', () => { this.$('results').hidden = true; this.start(); });
+    this.$('againBtn').addEventListener('click', () => { if (Net.role === 'guest') return; this.$('results').hidden = true; this.start(); });
     this.$('menuBtn').addEventListener('click', () => { this.$('results').hidden = true; Game.toMenu(); });
     this.$('resumeBtn').addEventListener('click', () => this.pause(false));
     this.$('quitBtn').addEventListener('click', () => { this.pause(false); Game.toMenu(); });
     this.$('muteBtn').addEventListener('click', () => { const m = Sound.toggleMute(); this.$('muteBtn').textContent = m ? 'SOUND: OFF' : 'SOUND: ON'; });
     this.$('ending').addEventListener('click', () => Game.skipEnding());
     G.onKey = (e) => {
-      if (e.code === 'Escape' && (Game.state === 'race' || Game.state === 'countdown')) this.pause(!Game.paused);
+      if (e.code === 'Escape' && (Game.state === 'race' || Game.state === 'countdown')) this.pause(this.$('pause').hidden);
       if (e.code === 'KeyM' && Game.state !== 'demo') Sound.toggleMute();
       if (Game.state === 'ending' && (e.code === 'Space' || e.code === 'Enter')) Game.skipEnding();
-      if (Game.state === 'demo' && e.code === 'Enter' && !this.$('menu').hidden) this.start();
+      if (Game.state === 'demo' && e.code === 'Enter' && !this.$('menu').hidden && document.activeElement !== this.$('joinCode')) this.start();
     };
     this.touchMode = matchMedia('(pointer: coarse)').matches;
     this.setupTouch();
   },
   start() {
+    if (this.menuCfg.mode && Net.role !== 'host') return; // online: only the room's host starts races
     const cfg = Object.assign({}, this.menuCfg);
     try { localStorage.setItem('bunker0cfg', JSON.stringify(cfg)); } catch (_) {}
     this.$('menu').hidden = true;
     Game.start(cfg);
   },
-  showMenu() { this.$('menu').hidden = false; this.$('ending').hidden = true; this.$('results').hidden = true; },
+  showMenu() { this.$('menu').hidden = false; this.$('ending').hidden = true; this.$('results').hidden = true; this.renderOnline(); },
   pause(on) {
-    Game.paused = on;
+    // an online race keeps running for everyone: Esc only opens the menu card
+    const online = Game.race && Game.race.cfg.net;
+    Game.paused = on && !online;
     this.$('pause').hidden = !on;
-    if (Sound.ctx) { if (on) Sound.ctx.suspend(); else Sound.ctx.resume(); }
+    this.$('pauseTitle').textContent = online ? 'ONLINE RACE' : 'PAUSED';
+    if (Sound.ctx && !online) { if (on) Sound.ctx.suspend(); else Sound.ctx.resume(); }
   },
   renderControls() {
-    const n = this.menuCfg.players;
+    const n = this.menuCfg.mode ? 1 : this.menuCfg.players;
     const names = ['STEVE', 'SERGEY', 'DANEL'];
     const colors = ['#ff7a1a', '#ff4f8b', '#35e0ff'];
     const sets = {
@@ -90,13 +98,66 @@ const HUD = {
     sets.forEach((s, i) => {
       html += `<div class="ctl-row"><span class="ctl-name" style="--c:${colors[i]}">${names[i]}</span>${s.map((k) => `<span><kbd>${k}</kbd></span>`).join('')}</div>`;
     });
-    if (n < 3) html += `<p class="ctl-note">Fable and Astra drive the other humans (${names.slice(n).join(', ')}). Gamepads connect automatically: pad 1 is Steve, pad 2 is Sergey, pad 3 is Danel.</p>`;
+    if (this.menuCfg.mode) html += '<p class="ctl-note">Online: everyone plays on their own computer with these keys or a gamepad. Free seats are driven by Fable and Astra.</p>';
+    else if (n < 3) html += `<p class="ctl-note">Fable and Astra drive the other humans (${names.slice(n).join(', ')}). Gamepads connect automatically: pad 1 is Steve, pad 2 is Sergey, pad 3 is Danel.</p>`;
     else html += '<p class="ctl-note">Three on one keyboard is cramped but fun. Gamepads connect automatically.</p>';
     this.$('controls').innerHTML = html;
   },
 
+  // ------------------------------------------------------------ online lobby
+  setupOnline() {
+    const code = this.$('joinCode');
+    code.addEventListener('input', () => { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5); });
+    code.addEventListener('keydown', (e) => { if (e.code === 'Enter') { e.stopPropagation(); this.$('joinBtn').click(); } });
+    this.$('hostBtn').addEventListener('click', () => { Sound.init(); Net.host(); });
+    this.$('joinBtn').addEventListener('click', () => { Sound.init(); if (code.value.length >= 4) Net.join(code.value); else this.netMsg('Enter the 5-letter room code.', true); });
+    this.$('leaveBtn').addEventListener('click', () => { Net.leave(); this.netMsg(''); });
+    this.$('copyLink').addEventListener('click', () => {
+      const url = Net.inviteLink();
+      const done = () => { this.$('copyLink').textContent = 'LINK COPIED'; setTimeout(() => { this.$('copyLink').textContent = 'COPY INVITE LINK'; }, 1600); };
+      if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, () => prompt('Invite link:', url));
+      else prompt('Invite link:', url);
+    });
+    // invite links: ?join=CODE opens the online tab and joins straight away
+    const q = new URLSearchParams(location.search).get('join');
+    if (q) {
+      this.menuCfg.mode = 1;
+      document.querySelectorAll('.seg[data-key="mode"] button').forEach((b) => b.classList.toggle('on', +b.dataset.v === 1));
+      code.value = q.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+      this.renderControls();
+      setTimeout(() => Net.join(code.value), 300);
+    }
+    this.renderOnline();
+  },
+  netMsg(text, bad) { const el = this.$('netMsg'); el.textContent = text; el.classList.toggle('bad', !!bad); },
+  renderOnline() {
+    const online = !!this.menuCfg.mode;
+    document.body.classList.toggle('online', online);
+    this.$('online').hidden = !online;
+    const inRoom = !!Net.role;
+    this.$('netStart').hidden = inRoom;
+    this.$('room').hidden = !inRoom;
+    const guest = Net.role === 'guest';
+    document.querySelectorAll('[data-hostonly]').forEach((el) => { el.hidden = guest; });
+    const btn = this.$('startBtn');
+    if (!online) { btn.disabled = false; btn.firstChild.textContent = 'START RACE '; }
+    else if (Net.role === 'host') { btn.disabled = false; btn.firstChild.textContent = `START ONLINE RACE · ${1 + Net.guests.length}/3 `; }
+    else { btn.disabled = true; btn.firstChild.textContent = guest ? 'WAITING FOR THE HOST… ' : 'CREATE OR JOIN A ROOM '; }
+    const ag = this.$('againBtn');
+    ag.disabled = guest; ag.textContent = guest ? 'HOST STARTS THE NEXT RACE' : 'RACE AGAIN';
+    if (!inRoom) return;
+    this.$('roomCode').textContent = Net.code;
+    this.$('copyLink').hidden = guest;
+    const names = ['STEVE', 'SERGEY', 'DANEL'], colors = ['#ff7a1a', '#ff4f8b', '#35e0ff'];
+    const seats = Net.seats();
+    this.$('slots').innerHTML = names.map((n, i) => {
+      const st = seats[i];
+      return `<li style="--c:${colors[i]}"${st ? ' class="taken"' : ''}><b>${n}</b><span>${st || 'free seat · Fable and Astra drive'}</span></li>`;
+    }).join('');
+  },
+
   // ------------------------------------------------------------ race HUD
-  setup(players, demo) {
+  setup(players, demo, who = [0, 1, 2]) {
     this.hud.innerHTML = '';
     this.panels = [];
     this.cache.clear();
@@ -116,7 +177,7 @@ const HUD = {
       el.innerHTML = `
         <div class="vp-top">
           <div class="pos"><b data-k="pos">–</b><small>/9</small></div>
-          <div class="who" style="--c:${['#ff7a1a', '#ff4f8b', '#35e0ff'][i]}">${['STEVE', 'SERGEY', 'DANEL'][i]}</div>
+          <div class="who" style="--c:${['#ff7a1a', '#ff4f8b', '#35e0ff'][who[i]]}">${['STEVE', 'SERGEY', 'DANEL'][who[i]]}</div>
           <div class="lap"><span>LAP</span> <b data-k="lap">1</b>/<span data-k="laps">3</span><div class="time" data-k="time">0:00.0</div></div>
         </div>
         <div class="vp-zone" data-k="zone"></div>
@@ -155,6 +216,7 @@ const HUD = {
     const p = this.panels[i]; if (!p) return;
     const el = p.refs.msg;
     el.textContent = text; el.style.color = color;
+    this.cache.set(i + 'msgtextContent', text); // so the timed clear in update() is not skipped
     el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
     p.msgT = dur;
   },
