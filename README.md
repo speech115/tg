@@ -1,3 +1,12 @@
+> [!CAUTION]
+> **This project has moved to [tgcli](https://github.com/speech115/tgcli). This repository is archived and no longer updated.**
+>
+> Both install a command named `tg`; keep only tgcli. To switch, paste this into your AI agent:
+> `Install tgcli for Telegram by following https://github.com/speech115/tgcli/blob/main/INSTALL_FOR_AGENTS.md and replace the old speech115/tg (tg-harness) install.`
+>
+> **Проект переехал в [tgcli](https://github.com/speech115/tgcli), этот репозиторий в архиве.** Чтобы перейти, вставьте агенту:
+> `Установи tgcli для Telegram по инструкции https://github.com/speech115/tgcli/blob/main/INSTALL_FOR_AGENTS.md и замени старый speech115/tg (tg-harness).`
+
 <img src="https://raw.githubusercontent.com/speech115/tg/main/static/banner-ink.svg" alt="tg" width="100%" />
 
 <div align="center">
